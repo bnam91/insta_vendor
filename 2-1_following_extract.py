@@ -8,10 +8,11 @@
 4. 캐시 관리 및 로그인 세션 유지
 
 데이터 저장:
-1. JSON 파일 (following_extract_data.json)
-   - 기존 데이터 보존
+1. MongoDB (03_main_following_extract_data 컬렉션)
+   - 기존 데이터 보존 (from 값이 같은 경우)
    - 동일 계정에서 추출 시 중복 제거 후 신규 데이터만 추가
    - 다른 계정에서 추출 시 해당 계정 데이터만 초기화 후 추가
+   - 기존 데이터의 from 값이 같을 경우 삭제 후 신규 데이터로 교체
 
 추출 정보:
 - username (사용자 아이디)
@@ -25,6 +26,7 @@
 - 인스타그램 정책 준수를 위한 랜덤 대기 시간 적용
 - 브라우저 자동화 감지 방지 기능 포함
 - 안정적인 데이터 추출을 위한 다중 예외 처리
+- `temp_profile_url.txt`: 크롤링할 프로필의 URL을 임시로 저장하는 파일
 """
 
 
@@ -53,6 +55,8 @@ from selenium.webdriver.common.keys import Keys
 import pandas as pd
 import json
 from datetime import datetime
+from pymongo import MongoClient
+from pymongo.server_api import ServerApi
 
 def clear_chrome_data(user_data_dir, keep_login=True):
     default_dir = os.path.join(user_data_dir, 'Default')
@@ -195,7 +199,7 @@ def main():
         options.add_experimental_option("excludeSwitches", ["enable-logging"])
 
         # 절대경로에서 상대경로로 변경
-        user_data_dir = os.path.join(os.path.dirname(__file__), "user_data", "goyanmedia")
+        user_data_dir = os.path.join(os.path.dirname(__file__), "user_data", "home_goyamedia_feed")
         options.add_argument(f"user-data-dir={user_data_dir}")
 
         # 캐시와 임시 파일 정리 (로그인 정보 유지)
@@ -216,6 +220,7 @@ def main():
         except FileNotFoundError:
             # 기본 URL 사용
             profile_url = "https://www.instagram.com/c_____woo/"
+            # profile_url = "https://www.instagram.com/bnam91/"
 
         from_user = profile_url.split('/')[-2]  # username 추출
         driver.get(profile_url)
@@ -311,36 +316,33 @@ def main():
             # 데이터프레임 생성
             df = pd.DataFrame(following_list)
             
-            # JSON 파일 처리
-            json_filename = '2-1_following_extract_data.json'
+            # MongoDB 연결 설정
+            mongo_uri = "mongodb+srv://coq3820:JmbIOcaEOrvkpQo1@cluster0.qj1ty.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
+            client = MongoClient(mongo_uri, server_api=ServerApi('1'))
+            db = client['insta09_database']
+            collection = db['03_main_following_extract_data']  # 컬렉션 이름 변경
 
-            # 기존 JSON 파일 읽기
-            existing_data = []
-            try:
-                if os.path.exists(json_filename):
-                    with open(json_filename, 'r', encoding='utf-8') as f:
-                        existing_data = json.load(f)
-                    print(f"기존 JSON 파일에서 {len(existing_data)}개의 데이터를 읽었습니다.")
-            except Exception as e:
-                print(f"기존 JSON 파일 읽기 실패: {str(e)}")
-                existing_data = []
+            # MongoDB에서 모든 데이터 읽기
+            all_existing_data = list(collection.find())
 
-            # from 값이 같은 데이터가 있는지 확인
-            same_from_exists = any(item.get('from') == from_user for item in existing_data)
+            # 현재 from_user와 동일한 from 값을 가진 데이터가 있는지 확인
+            same_from_exists = any(data.get('from') == from_user for data in all_existing_data)
 
             if same_from_exists:
-                # from 값이 같은 경우, 기존 데이터 유지하고 신규 데이터만 추가
-                existing_usernames = {item.get('username') for item in existing_data if item.get('from') == from_user}
+                # from 값이 같은 경우, 기존 데이터를 유지하고 신규 데이터만 추가
+                existing_usernames = {data.get('username') for data in all_existing_data if data.get('from') == from_user}
                 new_data = []
                 for user_info in following_list:
                     if user_info['username'] not in existing_usernames:
                         new_data.append(user_info)
                 print(f"기존의 {from_user} 데이터를 유지하고 {len(new_data)}개의 신규 데이터만 추가합니다.")
             else:
-                # from 값이 다른 경우, 기존 데이터를 모두 삭제하고 새로운 데이터로 교체
-                existing_data = []  # 기존 데이터 완전 삭제
+                # from 값이 다른 경우, 컬렉션의 모든 데이터를 삭제하고 새로운 데이터로 교체
+                print("새로운 from 값이 감지되어 컬렉션의 모든 데이터를 삭제합니다...")
+                result = collection.delete_many({})  # 모든 데이터 삭제
+                print(f"삭제된 문서 수: {result.deleted_count}")
                 new_data = following_list
-                print(f"새로운 from 값({from_user})이 감지되어 기존 데이터를 삭제하고 새로운 데이터를 추가합니다.")
+                print(f"새로운 from 값({from_user})의 {len(new_data)}개 데이터를 추가합니다.")
 
             # 마지막 ID 찾기
             try:
@@ -349,26 +351,28 @@ def main():
             except FileNotFoundError:
                 last_id = 0
                 
-            # 새로운 데이터에 ID 부여
+            # 새로운 데이터에 ID 부여 및 MongoDB에 데이터 삽입
             for user_info in new_data:
                 last_id += 1
                 user_info['num'] = last_id  # 키 이름 변경
                 
+                # MongoDB에 데이터 삽입
+                try:
+                    collection.insert_one(user_info)  # MongoDB에 데이터 삽입
+                    print(f"MongoDB에 데이터 삽입 성공: {user_info['username']}")
+                except Exception as e:
+                    print(f"MongoDB에 데이터 삽입 중 오류 발생: {str(e)}")
+
             # 업데이트된 마지막 ID 저장
             with open('last_id.txt', 'w') as f:
                 f.write(str(last_id))
 
-            # 업데이트된 데이터를 JSON 파일로 저장
-            updated_data = existing_data + new_data
+            # MongoDB에 데이터 삽입 후 결과 출력
+            print(f"\nMongoDB에 총 {len(new_data)}개의 신규 데이터가 추가되었습니다.")
+            print(f"- 전체 데이터 수: {len(all_existing_data) + len(new_data)}개")  # 기존 데이터 수와 신규 데이터 수 합산
 
-            try:
-                with open(json_filename, 'w', encoding='utf-8') as f:
-                    json.dump(updated_data, f, ensure_ascii=False, indent=4)
-                print(f"\nJSON 파일 업데이트 완료:")
-                print(f"- 새로 추가된 데이터: {len(new_data)}개")
-                print(f"- 전체 데이터 수: {len(updated_data)}개")
-            except Exception as e:
-                print(f"JSON 파일 저장 중 오류 발생: {str(e)}")
+            # MongoDB 연결 종료
+            client.close()  # MongoDB 연결 종료
 
         except Exception as e:
             print(f"오류 발생: {str(e)}")
