@@ -1,4 +1,9 @@
 """
+
+몽고db : https://cloud.mongodb.com/v2#/org/67b53ffbba89e066f00516b9/projects
+github : https://github.com/bnam91/insta_vendor
+
+
 입력: 1000 × 200 토큰 = 200,000 토큰
 → $0.150 × (200,000/1,000,000) = $0.03
 
@@ -89,6 +94,15 @@
    - 10회 크롤링 후 5-10분 휴식
    - 세션별 수집 현황 로깅
    - 오류 발생 시 5분 후 자동 재시도
+
+3. MongoDB TTL 인덱스 설정
+   - crawl_date 필드 기준으로 자동 삭제
+   - 기본값: 7일 후 삭제 (7 * 24 * 60 * 60 초)
+   - TTL 기간 변경 시:
+     * expireAfterSeconds 값 수정
+     * 3일 = 3 * 24 * 60 * 60
+     * 5일 = 5 * 24 * 60 * 60
+     * 10일 = 10 * 24 * 60 * 60
 """
 
 # 코드 작업내용(완료)
@@ -181,6 +195,18 @@ try:
     # post_url에 Unique Index 생성
     collection.create_index("post_url", unique=True)
     print("Unique Index가 생성되었습니다.")
+
+    # TTL 인덱스 생성 (자동 삭제 설정)
+    # TTL 기간 변경 시 아래 값 수정:
+    # 3일 = 3 * 24 * 60 * 60
+    # 5일 = 5 * 24 * 60 * 60
+    # 10일 = 10 * 24 * 60 * 60
+    collection.create_index(
+        "crawl_date", 
+        expireAfterSeconds=30 * 24 * 60 * 60  # 30일
+    )
+    print("TTL Index가 생성되었습니다.")
+
 except Exception as e:
     print(f"MongoDB 연결 또는 인덱스 생성 실패: {e}")
 
@@ -192,7 +218,7 @@ def update_mongodb_data(values, current_date):
             "author": values[1],
             "content": values[2],
             "post_url": values[3],
-            "crawl_date": current_date,
+            "crawl_date": datetime.now(timezone(timedelta(hours=9))),  # KST 기준 현재 시간을 Date 객체로 저장
             "09_feed": "",
             "09_brand": "",
             "09_item": "",
