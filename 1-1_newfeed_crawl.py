@@ -1,6 +1,6 @@
 """
 
-몽고db : https://cloud.mongodb.com/v2#/org/67b53ffbba89e066f00516b9/projects
+몽고db : https://cloud.mongodb.com/v2/67b53ffbba89e066f00516de#/clusters
 github : https://github.com/bnam91/insta_vendor
 
 
@@ -240,10 +240,12 @@ def update_mongodb_data(values, current_date):
                 return False
 
         # 50개 단위로 휴식시간 추가
-        post_count = collection.count_documents({})
+        post_count = collection.count_documents({})  # MongoDB의 총 데이터 수
         if post_count % 50 == 0:
             rest_time = random.uniform(60, 900)  # 1분(60초)에서 15분(900초) 사이의 랜덤한 시간
-            print(f"\n50개의 게시물 수집 완료. {rest_time:.1f}초 동안 휴식을 시작합니다...")
+            print(f"\n50개의 게시물 수집 완료. ")
+            print(f"🚩현재 DB에 총 {post_count}개의 데이터가 있습니다.")
+            print(f"{rest_time:.1f}초 동안 휴식을 시작합니다...")
             
             # 카운트다운 시작
             start_time = time.time()
@@ -258,7 +260,6 @@ def update_mongodb_data(values, current_date):
                 minutes = int(remaining_time // 60)
                 seconds = int(remaining_time % 60)
                 print(f"\r남은 휴식 시간: {minutes}분 {seconds}초", end='', flush=True)
-                time.sleep(1)
         
         print(f"\n현재까지 총 {post_count}개의 게시물이 저장되었습니다.")
         return True
@@ -274,7 +275,7 @@ def load_processed_posts():
     try:
         mongo_posts = collection.find({}, {"post_url": 1})
         processed_posts.update(post["post_url"] for post in mongo_posts)
-        print(f"MongoDB에서 {len(processed_posts)}개의 게시물 URL을 로드했습니다.")
+        print(f"🚩MongoDB에서 {len(processed_posts)}개의 게시물 URL을 로드했습니다.")
     except Exception as e:
         print(f"MongoDB 데이터 로드 중 오류 발생: {str(e)}")
     
@@ -290,7 +291,9 @@ def main_crawling():
 
         # 크롤링 시작 전에 기존 데이터 로드
         processed_posts = load_processed_posts()
-        print(f"MongoDB에서 {len(processed_posts)}개의 게시물 URL을 로드했습니다.")
+
+        # 피드 크롤링을 시작합니다...
+        print("피드 크롤링을 시작합니다...")
 
         # 스크롤하면서 피드 크롤링
         SCROLL_PAUSE_TIME = 2
@@ -375,7 +378,10 @@ def main_crawling():
                         print("\n새로운 게시물 발견!")
                         print(f"작성자: {username}")
                         print(f"작성시간: {post_time}")
-                        print(f"본문: {post_text}")
+
+                        # 본문을 100자까지만 출력하고, 그 이상은 생략
+                        post_text_display = post_text if len(post_text) <= 100 else post_text[:100] + "..."
+                        print(f"본문: {post_text_display}")
                         print(f"게시물 링크: {post_link}")
                         print("-" * 50)
                         
