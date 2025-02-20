@@ -1,0 +1,53 @@
+requirements.txt에 패키지 업데이트
+pip freeze > requirements.txt
+
+핍리스트 설치
+pip install -r requirements.txt
+
+
+
+====
+1. README.md의 역할
+프로젝트 소개: 이 프로젝트가 무엇인지 간단하게 설명
+설치 방법: 프로젝트를 실행하는 데 필요한 패키지 및 환경 설정 방법 안내
+사용법: 코드 실행 방법 및 주요 기능 설명
+기여 방법: 다른 개발자가 프로젝트에 기여하는 방법 안내 (오픈소스일 경우)
+라이선스 정보: 프로젝트의 사용 조건 (예: MIT, GPL 등)
+2. README.md 파일 만들기
+프로젝트 루트 디렉토리에 README.md 파일을 생성합니다.
+파일을 열고 마크다운(Markdown) 형식으로 작성합니다.
+3. 기본 README.md 예제
+md
+복사
+편집
+# My Python Project
+
+이 프로젝트는 간단한 웹 스크래퍼입니다.
+
+## 설치 방법
+
+```bash
+pip install -r requirements.txt
+사용법
+bash
+복사
+편집
+python main.py
+기여 방법
+이 저장소를 포크합니다.
+새로운 기능을 개발합니다.
+PR을 생성하여 기여해주세요.
+go
+복사
+편집
+
+## 4. `README.md`를 깃허브에서 보는 방법
+깃허브에서 프로젝트를 올리면, `README.md`가 자동으로 메인 페이지에 표시됩니다.
+
+✅ 즉, `README.md`는 프로젝트 설명서 같은 역할을 합니다! 🚀
+
+
+
+
+
+
