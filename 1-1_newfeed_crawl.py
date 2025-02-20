@@ -177,8 +177,12 @@ try:
     # 데이터베이스와 컬렉션 선택
     db = client['insta09_database']
     collection = db['01_main_newfeed_crawl_data']
+    
+    # post_url에 Unique Index 생성
+    collection.create_index("post_url", unique=True)
+    print("Unique Index가 생성되었습니다.")
 except Exception as e:
-    print(f"MongoDB 연결 실패: {e}")
+    print(f"MongoDB 연결 또는 인덱스 생성 실패: {e}")
 
 def update_mongodb_data(values, current_date):
     try:
@@ -198,18 +202,16 @@ def update_mongodb_data(values, current_date):
             "processed": False
         }
         
-        # MongoDB에 데이터 저장
+        # MongoDB에 데이터 저장 시도
         try:
-            # URL 기준으로 중복 체크
-            existing_post = collection.find_one({"post_url": values[3]})
-            if not existing_post:
-                collection.insert_one(post_data)
-                print("MongoDB에 데이터가 저장되었습니다.")
-            else:
-                print("이미 MongoDB에 존재하는 게시물입니다.")
+            collection.insert_one(post_data)
+            print("MongoDB에 데이터가 저장되었습니다.")
         except Exception as e:
-            print(f"MongoDB 저장 중 오류 발생: {str(e)}")
-            return False
+            if "duplicate key error" in str(e):
+                print("이미 MongoDB에 존재하는 게시물입니다.")
+            else:
+                print(f"MongoDB 저장 중 오류 발생: {str(e)}")
+                return False
 
         # 50개 단위로 휴식시간 추가
         post_count = collection.count_documents({})
