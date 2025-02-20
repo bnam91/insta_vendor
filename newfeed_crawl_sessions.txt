@@ -1,0 +1,35 @@
+[2025-02-20 15:22:33] 새로운 크롤링 세션 시작
+[2025-02-20 15:23:43] 새로운 크롤링 세션 시작
+[2025-02-20 15:25:22] 새로운 크롤링 세션 시작
+[2025-02-20 15:34:51] 새로운 크롤링 세션 시작
+[2025-02-20 15:52:06] 새로운 크롤링 세션 시작
+[2025-02-20 16:12:10] 새로운 크롤링 세션 시작
+[2025-02-20 16:13:32] 새로운 크롤링 세션 시작
+[2025-02-20 16:14:51] 새로운 크롤링 세션 시작
+[2025-02-20 16:29:27] 새로운 크롤링 세션 시작
+[2025-02-20 16:30:10] 새로운 크롤링 세션 시작
+[2025-02-20 16:30:52] 오류 발생: Message: no such window: target window already closed
+from unknown error: web view not found
+  (Session info: chrome=132.0.6834.197)
+Stacktrace:
+	GetHandleVerifier [0x00007FF6575A02F5+28725]
+	(No symbol) [0x00007FF657502AE0]
+	(No symbol) [0x00007FF65739510A]
+	(No symbol) [0x00007FF65736EEA5]
+	(No symbol) [0x00007FF657416F87]
+	(No symbol) [0x00007FF65742FA52]
+	(No symbol) [0x00007FF65740FD53]
+	(No symbol) [0x00007FF6573DA0E3]
+	(No symbol) [0x00007FF6573DB471]
+	GetHandleVerifier [0x00007FF6578CF30D+3366989]
+	GetHandleVerifier [0x00007FF6578E12F0+3440688]
+	GetHandleVerifier [0x00007FF6578D78FD+3401277]
+	GetHandleVerifier [0x00007FF65766AAAB+858091]
+	(No symbol) [0x00007FF65750E74F]
+	(No symbol) [0x00007FF65750A304]
+	(No symbol) [0x00007FF65750A49D]
+	(No symbol) [0x00007FF6574F8B69]
+	BaseThreadInitThunk [0x00007FFABAEE7374+20]
+	RtlUserThreadStart [0x00007FFABB2BCC91+33]
+
+[2025-02-20 16:31:08] 새로운 크롤링 세션 시작
