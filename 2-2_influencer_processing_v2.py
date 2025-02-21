@@ -135,12 +135,12 @@ def get_profile_urls():
         profile_data = []
         for idx, item in enumerate(json_data):
             # 게시물 데이터가 비어있거나 '-'인 항목만 처리
-            if not item.get('게시물') or item.get('게시물') == '-':
+            if not item.get('posts') or item.get('posts') == '-':
                 profile_url = item.get('profile_link', '')
                 if profile_url:  # URL이 있는 경우만 추가
                     profile_data.append((
                         profile_url,
-                        item.get('게시물', ''),
+                        item.get('posts', ''),
                         idx  # JSON 배열의 인덱스
                     ))
         
@@ -358,21 +358,20 @@ def update_profile_data(profile_data, json_index):
         if json_index < len(json_data):
             existing_data = json_data[json_index]
             
-            # 공구유무 분석 후 팔로우 처리
-            if profile_data.get('소개'):
+            if profile_data.get('bio'):
                 group_purchase_status = analyze_bio_for_group_purchase(
-                    profile_data.get('소개', ''),
-                    profile_data.get('외부프로필링크', '링크 없음')
+                    profile_data.get('bio', ''),
+                    profile_data.get('out_link', '링크 없음')
                 )
                 
                 # 기존 공구유무 데이터가 있으면 보존
-                if '공구유무' in existing_data and existing_data['공구유무']:
-                    print("기존 '공구유무' 데이터가 있어 보존합니다:", existing_data['공구유무'])
+                if '09_is' in existing_data and existing_data['09_is']:
+                    print("기존 '09_is' 데이터가 있어 보존합니다:", existing_data['09_is'])
                 else:
-                    profile_data['공구유무'] = group_purchase_status
+                    profile_data['09_is'] = group_purchase_status
                 
                 # 팔로우 조건 확인: Y(또는 확인필요(높음))이고 R등급이 아닌 경우에만 팔로우
-                followers = int(profile_data.get('팔로워', '0').replace('-', '0'))
+                followers = int(profile_data.get('followers', '0').replace('-', '0'))
                 is_r_grade = followers <= 5000
                 
                 should_follow = (
@@ -392,17 +391,17 @@ def update_profile_data(profile_data, json_index):
                             follow_button.click()
                             print("팔로우 완료")
                             time.sleep(2)
-                            profile_data['팔로우여부'] = '팔로우'
+                            profile_data['is_following'] = '팔로우'
                         else:
                             print("이미 팔로우 중입니다")
-                            profile_data['팔로우여부'] = '팔로우'
+                            profile_data['is_following'] = '팔로우'
                             
                     except Exception as e:
                         print(f"팔로우 처리 중 오류 발생: {str(e)}")
-                        profile_data['팔로우여부'] = '실패'
+                        profile_data['is_following'] = '실패'
                 else:
                     print("팔로우 조건에 해당하지 않습니다")
-                    profile_data['팔로우여부'] = ''
+                    profile_data['is_following'] = ''
             
             # 기존 데이터 유지하면서 새 데이터로 업데이트
             json_data[json_index].update(profile_data)
@@ -482,26 +481,26 @@ def load_and_update_json_data():
             
             # 새로운 데이터 구조 생성
             new_row_dict = {
-                "num": item.get('num', ''),  # 수정된 키
-                "add_date": item.get('add_date', ''),  # 수정된 키
-                "팔로우여부": "",
+                "num": item.get('num', ''),
+                "add_date": item.get('add_date', ''),
+                "is_following": "",
                 "from": item.get('from', ''),
                 "username": username,
                 "name": item.get('name', ''),
                 "profile_link": item.get('profile_link', ''),
-                "게시물": "",
-                "팔로워": "",
-                "팔로우": "",
-                "이름": "",
-                "이름추출": "",
-                "소개": "",
-                "외부프로필링크": "",
-                "공구유무": "",
-                "카테고리": "",
-                "키워드": "",
-                "릴스평균조회수(최근 15개)": "",
-                "이미지url": "",
-                "브랜드": [
+                "posts": "",
+                "followers": "",
+                "following": "",
+                "full_name": "",
+                "clean_name": "",
+                "bio": "",
+                "out_link": "",
+                "09_is": "",
+                "category": "",
+                "keywords": "",
+                "reels_views(15)": "",
+                "image_url": "",
+                "brand": [
                     {
                         "name": "",  # 브랜드명 -- 닌자
                         "category": "",  # 브랜드 카테고리 -- 주방가전
@@ -518,14 +517,14 @@ def load_and_update_json_data():
                         ]
                     }
                 ],
-                "콘텐츠점수(5점)": 1,  # 기본값을 1로 설정
-                "팔로워점수": "",
-                "게시물점수": "",
-                "릴스점수": "",
-                "콘텐츠가산점": "",
-                "최종점수": "",
-                "등급": "",
-                "이전등급": [""]
+                "content_score": 1,
+                "follower_score": "",
+                "post_score": "",
+                "reels_score": "",
+                "content_bonus_score": "",
+                "final_score": "",
+                "grade": "",
+                "pre_grades": [""]
             }
             
             # 새 데이터를 기존 딕셔너리에 추가
@@ -651,23 +650,23 @@ if __name__ == "__main__":
             # 게시물, 팔로워, 팔로우 수 크롤링 - 각각 개별적으로 try-except 처리
             try:
                 posts = convert_to_number(driver.find_element(By.XPATH, "//li[contains(., '게시물')]/div/span/span").text)
-                profile_data['게시물'] = posts
+                profile_data['posts'] = posts
             except NoSuchElementException:
-                profile_data['게시물'] = '-'
+                profile_data['posts'] = '-'
                 print("게시물 수를 찾을 수 없습니다.")
             
             try:
                 followers = convert_to_number(driver.find_element(By.XPATH, "//li[contains(., '팔로워')]/div/a/span/span").text)
-                profile_data['팔로워'] = followers
+                profile_data['followers'] = followers
             except NoSuchElementException:
-                profile_data['팔로워'] = '-'
+                profile_data['followers'] = '-'
                 print("팔로워 수를 찾을 수 없습니다.")
             
             try:
                 following = convert_to_number(driver.find_element(By.XPATH, "//li[contains(., '팔로우')]/div/a/span/span").text)
-                profile_data['팔로우'] = following
+                profile_data['following'] = following
             except NoSuchElementException:
-                profile_data['팔로우'] = '-'
+                profile_data['following'] = '-'
                 print("팔로우 수를 찾을 수 없습니다.")
             
             # 이름과 소개, 외부 링크 크롤
@@ -676,38 +675,32 @@ if __name__ == "__main__":
                     By.XPATH,
                     "//div[contains(@class, 'x7a106z')]//span[contains(@class, 'x1lliihq')]"
                 ).text
-                profile_data['이름'] = name
+                profile_data['full_name'] = name
                 print(f"이름: {name}")
             except Exception as e:
-                profile_data['이름'] = '-'
+                profile_data['full_name'] = '-'
                 print(f"이름을 찾을 수 없습니다: {str(e)}")
 
-            # # 'name' 필드와 '이름' 필드 비교 부분 수정
-            # if profile_data.get('이름') != json_data[row_index].get('name'):
-            #     print(f"이름 필드({json_data[row_index].get('name')})와 크롤링한 이름({profile_data.get('이름')})이 다릅니다. 작업을 중단합니다.")
-            #     driver.quit()
-            #     sys.exit()
-            
             try:
                 bio = driver.find_element(By.XPATH, "//span[@class='_ap3a _aaco _aacu _aacx _aad7 _aade']").text
-                profile_data['소개'] = bio
+                profile_data['bio'] = bio
             except NoSuchElementException:
-                profile_data['소개'] = '-'
+                profile_data['bio'] = '-'
                 print("소개글을 찾을 수 없습니다.")
             
             try:
                 external_link = driver.find_element(By.XPATH, "//div[@class='x6ikm8r x10wlt62']/a").get_attribute("href")
-                profile_data['외부프로필링크'] = external_link
+                profile_data['out_link'] = external_link
             except NoSuchElementException:
-                profile_data['외부프로필링크'] = "링크 없음"
+                profile_data['out_link'] = "링크 없음"
                 print("외부 링크를 찾을 수 없습니다.")
             
             # 공구유무 분석 추가
             group_purchase_status = analyze_bio_for_group_purchase(
-                profile_data.get('소개', ''),
-                profile_data.get('외부프로필링크', '링크 없음')
+                profile_data.get('bio', ''),
+                profile_data.get('out_link', '링크 없음')
             )
-            profile_data['공구유무'] = group_purchase_status
+            profile_data['09_is'] = group_purchase_status
             print(f"공구유무 분석 결과: {group_purchase_status}")
             
             # 데이터가 하나라도 있다면 스프레드시트 업데이트
