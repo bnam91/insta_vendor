@@ -1,35 +1,41 @@
 '''
 [프로그램 설명]
-인스타그램 프로필 정보를 크롤링하여 JSON 파일에 저장하는 프로그램
+인스타그램 프로필 정보를 크롤링하여 MongoDB에 저장하는 프로그램
 
 [데이터 흐름]
-1. 입력 파일: 2-1_following_extract_data.json
-   - 기본 프로필 정보 (id, username, name, profile_link 등)
-   - 추가날짜, from 정보
+1. 입력/출력 데이터베이스: 
+   - MongoDB
+     * 입력: 기존 프로필 데이터 로드
+     * 출력: 크롤링 데이터 업데이트
 
-2. 출력/업데이트 파일: 2-2_influencer_processing_data.json
-   - 크롤링으로 업데이트되는 항목:
-     * 게시물 수
-     * 팔로워 수
-     * 팔로우 수
-     * 이름
-     * 소개글
-     * 외부프로필링크
-     * 공구유무 (Claude API 분석)
-     * 이름추출 (Claude API 분석)
+2. 크롤링으로 업데이트되는 항목:
+   * posts (게시물 수)
+   * followers (팔로워 수)
+   * following (팔로우 수)
+   * full_name (이름)
+   * bio (소개글)
+   * out_link (외부프로필링크)
+   * 09_is (공구유무, Claude API 분석)
+   * clean_name (이름추출, Claude API 분석)
    
-   - 수동 입력/관리 항목 (보존):
-     * 팔로우여부
-     * 카테고리
-     * 키워드
-     * 릴스평균조회수
-     * 이미지url
-     * 브랜드 정보
-     * 콘텐츠/팔로워/게시물/릴스 점수
-     * 등급 정보
+3. 수동 입력/관리 항목 (보존):
+   * is_following (팔로우여부)
+   * category (카테고리)
+   * keywords (키워드)
+   * reels_views(15) (릴스평균조회수)
+   * image_url (이미지url)
+   * 브랜드 정보
+   * content_score (콘텐츠 점수)
+   * follower_score (팔로워 점수)
+   * post_score (게시물 점수)
+   * reels_score (릴스 점수)
+   * content_bonus_score (콘텐츠가산점)
+   * final_score (최종점수)
+   * grade (등급)
+   * pre_grades (이전등급)
 
 [주요 처리 로직]
-1. JSON 데이터 관리
+1. MongoDB 데이터 관리
    - 새로운 프로필 데이터 추가
    - 기존 데이터 보존
    - 크롤링 데이터 업데이트
@@ -74,7 +80,6 @@ import random
 import sys
 import subprocess
 import datetime
-import json
 from pymongo import MongoClient
 from pymongo.server_api import ServerApi
 from dotenv import load_dotenv
@@ -126,23 +131,35 @@ options.add_argument("--disable-cache")
 driver = webdriver.Chrome(options=options)
 
 def get_profile_urls():
-    """JSON 파일에서 프로필 데이터 읽기"""
+    """MongoDB에서 프로필 데이터 읽기"""
     try:
-        json_path = os.path.join(os.path.dirname(__file__), '2-2_influencer_processing_data.json')
-        with open(json_path, 'r', encoding='utf-8') as f:
-            json_data = json.load(f)
+        # posts 필드가 비어있거나 '-'인 문서만 조회
+        query = {
+            '$or': [
+                {'posts': ''},
+                {'posts': '-'},
+                {'posts': {'$exists': False}}
+            ]
+        }
+        
+        # 필요한 필드만 가져오기
+        projection = {
+            'profile_link': 1,
+            'posts': 1,
+            '_id': 1
+        }
         
         profile_data = []
-        for idx, item in enumerate(json_data):
-            # 게시물 데이터가 비어있거나 '-'인 항목만 처리
-            if not item.get('posts') or item.get('posts') == '-':
-                profile_url = item.get('profile_link', '')
-                if profile_url:  # URL이 있는 경우만 추가
-                    profile_data.append((
-                        profile_url,
-                        item.get('posts', ''),
-                        idx  # JSON 배열의 인덱스
-                    ))
+        cursor = target_collection.find(query, projection)
+        
+        for doc in cursor:
+            profile_url = doc.get('profile_link', '')
+            if profile_url:  # URL이 있는 경우만 추가
+                profile_data.append((
+                    profile_url,
+                    doc.get('posts', ''),
+                    doc['_id']  # MongoDB의 _id를 인덱스로 사용
+                ))
         
         if not profile_data:
             print('처리할 프로필 데이터가 없습니다.')
@@ -347,17 +364,32 @@ def extract_clean_name(display_name):
         print(f"\n이름 추출 중 오류 발생: {str(e)}")
         return display_name
 
-def update_profile_data(profile_data, json_index):
-    """JSON 파일의 데이터 업데이트"""
+# MongoDB 연결 설정
+mongo_uri = "mongodb+srv://coq3820:JmbIOcaEOrvkpQo1@cluster0.qj1ty.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
+try:
+    client = MongoClient(mongo_uri, server_api=ServerApi('1'))
+    client.admin.command('ping')
+    print("MongoDB에 성공적으로 연결되었습니다.")
+except Exception as e:
+    print(f"MongoDB 연결 실패: {e}")
+    sys.exit(1)
+db = client['insta09_database']
+source_collection = db['03_main_following_extract_data']
+target_collection = db['02_main_influencer_data']
+
+def update_profile_data(profile_data, document_id):
+    """MongoDB 데이터 업데이트"""
     try:
-        json_path = os.path.join(os.path.dirname(__file__), '2-2_influencer_processing_data.json')
+        # 기존 문서 찾기
+        existing_data = target_collection.find_one({'_id': document_id})
         
-        with open(json_path, 'r', encoding='utf-8') as f:
-            json_data = json.load(f)
-        
-        if json_index < len(json_data):
-            existing_data = json_data[json_index]
+        if existing_data:
+            # full_name이 있을 경우 clean_name 추출
+            if profile_data.get('full_name') and profile_data['full_name'] != '-':
+                profile_data['clean_name'] = extract_clean_name(profile_data['full_name'])
+                print(f"정제된 이름: {profile_data['clean_name']}")
             
+            # 기존 데이터 유지하면서 새 데이터로 업데이트
             if profile_data.get('bio'):
                 group_purchase_status = analyze_bio_for_group_purchase(
                     profile_data.get('bio', ''),
@@ -403,80 +435,29 @@ def update_profile_data(profile_data, json_index):
                     print("팔로우 조건에 해당하지 않습니다")
                     profile_data['is_following'] = ''
             
-            # 기존 데이터 유지하면서 새 데이터로 업데이트
-            json_data[json_index].update(profile_data)
+            # MongoDB 업데이트
+            target_collection.update_one(
+                {'_id': document_id},
+                {'$set': profile_data}
+            )
             
-            # JSON 파일 저장
-            with open(json_path, 'w', encoding='utf-8') as f:
-                json.dump(json_data, f, ensure_ascii=False, indent=4)
-            
-            print(f"JSON 인덱스 {json_index} 업데이트 완료")
+            print(f"MongoDB 문서 {document_id} 업데이트 완료")
             
     except Exception as e:
         print(f"데이터 업데이트 중 오류 발생: {str(e)}")
         print(f"상세 오류 정보: {type(e).__name__}")
 
-def convert_to_number(text):
-    """인스타그램 숫자 형식을 순수 숫자로 변환"""
-    text = text.replace(',', '')  # 쉼표 제거
-    
-    if '만' in text:
-        number = float(text.replace('만', '')) * 10000
-        return str(int(number))
-    elif '천' in text:
-        number = float(text.replace('천', '')) * 1000
-        return str(int(number))
-    else:
-        return text
-
-def restart_program():
-    """1-2시간 사이 랜덤한 시간 후에 프로그램을 재시작"""
-    # 1시간(3600초)에서 2시간(7200초) 사이의 랜덤한 시간 설정
-    wait_time = random.randint(3600, 7200)
-    print(f"\n프로그램이 {wait_time//3600}시간 {(wait_time%3600)//60}분 후에 재시작됩니다...")
-    
-    # 현재 시간과 다음 실행 시간 출력
-    now = datetime.datetime.now()
-    next_run = now + datetime.timedelta(seconds=wait_time)
-    print(f"현재 시간: {now.strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"다음 실행 시간: {next_run.strftime('%Y-%m-%d %H:%M:%S')}")
-    
-    # 카운트다운 시작
-    for remaining in range(wait_time, 0, -1):
-        minutes = remaining // 60
-        seconds = remaining % 60
-        print(f"\r다음 실행까지 남은 시간: {minutes//60:02d}시간 {minutes%60:02d}분 {seconds:02d}초", end='', flush=True)
-        time.sleep(1)
-    
-    print("\n프로그램을 재시작합니다...")
-    
-    # 현재 스크립트의 경로를 가져와서 재실행
-    python_executable = sys.executable
-    script_path = os.path.abspath(__file__)
-    subprocess.Popen([python_executable, script_path])
-    sys.exit()
-
-# MongoDB 연결 설정
-mongo_uri = "mongodb+srv://coq3820:JmbIOcaEOrvkpQo1@cluster0.qj1ty.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
-client = MongoClient(mongo_uri, server_api=ServerApi('1'))
-db = client['insta09_database']
-collection = db['03_main_following_extract_data']
-
-def load_and_update_json_data():
-    """MongoDB에서 데이터를 로드하고 JSON 파일 업데이트"""
+def load_and_update_mongodb_data():
+    """MongoDB 데이터 로드 및 업데이트"""
     try:
-        # 기존 출력 JSON 파일 읽기
-        existing_json_data = list(collection.find({}))
-        print(f"기존 데이터 수: {len(existing_json_data)}")
-
-        # username을 키로 하는 딕셔너리 생성 (기존 데이터)
-        existing_data_dict = {item.get('username', ''): item for item in existing_json_data}
+        # 소스 컬렉션에서 데이터 로드
+        existing_data = list(source_collection.find({}))
+        print(f"기존 데이터 수: {len(existing_data)}")
 
         # 새로운 데이터 처리
         new_data_count = 0
         
-        # MongoDB에서 데이터 읽기
-        for item in existing_data_dict.values():
+        for item in existing_data:
             username = item.get('username', '')
             
             # 새로운 데이터 구조 생성
@@ -527,26 +508,64 @@ def load_and_update_json_data():
                 "pre_grades": [""]
             }
             
-            # 새 데이터를 기존 딕셔너리에 추가
-            existing_data_dict[username] = new_row_dict
-            new_data_count += 1
+            # MongoDB에 삽입 또는 업데이트
+            result = target_collection.update_one(
+                {'username': username},
+                {'$setOnInsert': new_row_dict},
+                upsert=True
+            )
+            
+            if result.upserted_id:
+                new_data_count += 1
         
-        # 기존 데이터와 새 데이터를 합쳐서 리스트로 변환
-        updated_json_data = list(existing_data_dict.values())
-        
-        # JSON 파일 업데이트
-        output_json_path = os.path.join(os.path.dirname(__file__), '2-2_influencer_processing_data.json')
-        with open(output_json_path, 'w', encoding='utf-8') as f:
-            json.dump(updated_json_data, f, ensure_ascii=False, indent=4)
-        
-        print(f"기존 데이터 수: {len(existing_json_data)}")
+        print(f"기존 데이터 수: {len(existing_data)}")
         print(f"새로 추가된 데이터 수: {new_data_count}")
-        print(f"최종 데이터 수: {len(updated_json_data)}")
-        print(f"JSON 파일이 업데이트되었습니다: {output_json_path}")
+        print(f"최종 데이터 수: {target_collection.count_documents({})}")
+        print("MongoDB 데이터가 업데이트되었습니다.")
         
     except Exception as e:
         print(f"데이터 업데이트 중 오류 발생: {str(e)}")
         raise
+
+def convert_to_number(text):
+    """인스타그램 숫자 형식을 순수 숫자로 변환"""
+    text = text.replace(',', '')  # 쉼표 제거
+    
+    if '만' in text:
+        number = float(text.replace('만', '')) * 10000
+        return str(int(number))
+    elif '천' in text:
+        number = float(text.replace('천', '')) * 1000
+        return str(int(number))
+    else:
+        return text
+
+def restart_program():
+    """1-2시간 사이 랜덤한 시간 후에 프로그램을 재시작"""
+    # 1시간(3600초)에서 2시간(7200초) 사이의 랜덤한 시간 설정
+    wait_time = random.randint(3600, 7200)
+    print(f"\n프로그램이 {wait_time//3600}시간 {(wait_time%3600)//60}분 후에 재시작됩니다...")
+    
+    # 현재 시간과 다음 실행 시간 출력
+    now = datetime.datetime.now()
+    next_run = now + datetime.timedelta(seconds=wait_time)
+    print(f"현재 시간: {now.strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"다음 실행 시간: {next_run.strftime('%Y-%m-%d %H:%M:%S')}")
+    
+    # 카운트다운 시작
+    for remaining in range(wait_time, 0, -1):
+        minutes = remaining // 60
+        seconds = remaining % 60
+        print(f"\r다음 실행까지 남은 시간: {minutes//60:02d}시간 {minutes%60:02d}분 {seconds:02d}초", end='', flush=True)
+        time.sleep(1)
+    
+    print("\n프로그램을 재시작합니다...")
+    
+    # 현재 스크립트의 경로를 가져와서 재실행
+    python_executable = sys.executable
+    script_path = os.path.abspath(__file__)
+    subprocess.Popen([python_executable, script_path])
+    sys.exit()
 
 # 메인 실행 코드 수정
 if __name__ == "__main__":
@@ -560,10 +579,10 @@ if __name__ == "__main__":
     include_high_priority = response == 'y'
     print(f"\n선택된 팔로우 조건: {'Y 및 확인필요(높음)' if include_high_priority else 'Y만'}")
     
-    # JSON 데이터 처리 먼저 실행
-    load_and_update_json_data()
+    # JSON 데이터 처리를 MongoDB 처리로 변경
+    load_and_update_mongodb_data()
     
-    # 프로필 URL 가져오기
+    # 프로필 URL 가져오기 함수도 MongoDB에서 읽도록 수정 필요
     profile_urls = get_profile_urls()
     
     # 처리할 프로필이 없는 경우 바로 종료
