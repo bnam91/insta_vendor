@@ -199,7 +199,8 @@ def main():
         options.add_experimental_option("excludeSwitches", ["enable-logging"])
 
         # 절대경로에서 상대경로로 변경
-        user_data_dir = os.path.join(os.path.dirname(__file__), "user_data", "home_goyamedia_feed")
+        # user_data_dir = os.path.join(os.path.dirname(__file__), "user_data", "home_goyamedia_feed")
+        user_data_dir = os.path.join(os.path.dirname(__file__), "user_data", "office_goyamedia_feed")
         options.add_argument(f"user-data-dir={user_data_dir}")
 
         # 캐시와 임시 파일 정리 (로그인 정보 유지)
@@ -219,7 +220,8 @@ def main():
             # os.remove('temp_profile_url.txt')  # 이 줄 제거
         except FileNotFoundError:
             # 기본 URL 사용
-            profile_url = "https://www.instagram.com/c_____woo/"
+            # profile_url = "https://www.instagram.com/c_____woo/"
+            profile_url = "https://www.instagram.com/goyanmedia/"
             # profile_url = "https://www.instagram.com/bnam91/"
 
         from_user = profile_url.split('/')[-2]  # username 추출
@@ -339,8 +341,29 @@ def main():
             else:
                 # from 값이 다른 경우, 컬렉션의 모든 데이터를 삭제하고 새로운 데이터로 교체
                 print("새로운 from 값이 감지되어 컬렉션의 모든 데이터를 삭제합니다...")
-                result = collection.delete_many({})  # 모든 데이터 삭제
-                print(f"삭제된 문서 수: {result.deleted_count}")
+                try:
+                    before_count = collection.count_documents({})
+                    print(f"삭제 전 문서 수: {before_count}")
+                    
+                    # 삭제 시도
+                    result = collection.delete_many({})
+                    print(f"삭제 명령 결과 - 삭제된 문서 수: {result.deleted_count}")
+                    
+                    # 실제 삭제 확인
+                    remaining_docs = list(collection.find())
+                    print(f"실제 남아있는 문서들:")
+                    for doc in remaining_docs:
+                        print(f"- from: {doc.get('from')}, username: {doc.get('username')}")
+                    
+                    if len(remaining_docs) > 0:
+                        print("경고: 문서가 완전히 삭제되지 않았습니다!")
+                        # 다시 한번 삭제 시도
+                        print("다시 삭제를 시도합니다...")
+                        result2 = collection.delete_many({})
+                        print(f"두 번째 삭제 시도 결과: {result2.deleted_count}개 삭제됨")
+                except Exception as e:
+                    print(f"데이터 삭제 중 오류 발생: {str(e)}")
+                    print(f"오류 타입: {type(e)}")
                 new_data = following_list
                 print(f"새로운 from 값({from_user})의 {len(new_data)}개 데이터를 추가합니다.")
 
@@ -369,7 +392,9 @@ def main():
 
             # MongoDB에 데이터 삽입 후 결과 출력
             print(f"\nMongoDB에 총 {len(new_data)}개의 신규 데이터가 추가되었습니다.")
-            print(f"- 전체 데이터 수: {len(all_existing_data) + len(new_data)}개")  # 기존 데이터 수와 신규 데이터 수 합산
+            # 최종 데이터 수를 정확히 계산하기 위해 현재 컬렉션의 문서 수를 다시 조회
+            final_count = collection.count_documents({})
+            print(f"- 전체 데이터 수: {final_count}개")  # 수정된 부분
 
             # MongoDB 연결 종료
             client.close()  # MongoDB 연결 종료
