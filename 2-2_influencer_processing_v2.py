@@ -671,21 +671,23 @@ if __name__ == "__main__":
                 print("팔로우 수를 찾을 수 없습니다.")
             
             # 이름과 소개, 외부 링크 크롤
-            # 방법 8: 특정 텍스트를 포함하는 span에서 이름 추출
             try:
-                name = driver.find_element(By.XPATH, "//span[contains(text(), 'hpv | hsv | زگیل | تبخال')]").text
+                name = driver.find_element(
+                    By.XPATH,
+                    "//div[contains(@class, 'x7a106z')]//span[contains(@class, 'x1lliihq')]"
+                ).text
                 profile_data['이름'] = name
-                print(f"방법 8 - 이름 추출 성공: {name}")
+                print(f"이름: {name}")
             except Exception as e:
                 profile_data['이름'] = '-'
-                print(f"방법 8 - 이름을 찾을 수 없습니다: {str(e)}")
+                print(f"이름을 찾을 수 없습니다: {str(e)}")
 
-            # 'name' 필드와 '이름' 필드 비교
-            if profile_data.get('name') != profile_data.get('이름'):
-                print("이름 필드와 크롤링한 이름이 다릅니다. 작업을 중단합니다.")
-                driver.quit()
-                sys.exit()
-
+            # # 'name' 필드와 '이름' 필드 비교 부분 수정
+            # if profile_data.get('이름') != json_data[row_index].get('name'):
+            #     print(f"이름 필드({json_data[row_index].get('name')})와 크롤링한 이름({profile_data.get('이름')})이 다릅니다. 작업을 중단합니다.")
+            #     driver.quit()
+            #     sys.exit()
+            
             try:
                 bio = driver.find_element(By.XPATH, "//span[@class='_ap3a _aaco _aacu _aacx _aad7 _aade']").text
                 profile_data['소개'] = bio
