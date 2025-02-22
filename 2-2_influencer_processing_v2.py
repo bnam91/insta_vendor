@@ -370,12 +370,23 @@ try:
     client = MongoClient(mongo_uri, server_api=ServerApi('1'))
     client.admin.command('ping')
     print("MongoDB에 성공적으로 연결되었습니다.")
+    
+    db = client['insta09_database']
+    source_collection = db['03_main_following_extract_data']
+    target_collection = db['02_main_influencer_data']
+    
+    # username 필드에 유니크 인덱스 생성
+    try:
+        target_collection.create_index('username', unique=True)
+        print("username 필드에 유니크 인덱스 생성 완료!")
+    except Exception as e:
+        print(f"인덱스 생성 중 오류 발생: {e}")
+        # 이미 인덱스가 존재하는 경우 계속 진행
+        pass
+        
 except Exception as e:
     print(f"MongoDB 연결 실패: {e}")
     sys.exit(1)
-db = client['insta09_database']
-source_collection = db['03_main_following_extract_data']
-target_collection = db['02_main_influencer_data']
 
 def update_profile_data(profile_data, document_id):
     """MongoDB 데이터 업데이트"""
