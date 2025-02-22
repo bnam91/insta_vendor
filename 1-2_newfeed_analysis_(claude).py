@@ -127,35 +127,68 @@ import json
 from datetime import datetime
 import os
 from dotenv import load_dotenv
+from pymongo import MongoClient
+from pymongo.server_api import ServerApi
 
-def update_influencer_data(item):
+def get_mongodb_connection():
+    uri = "mongodb+srv://coq3820:JmbIOcaEOrvkpQo1@cluster0.qj1ty.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
+    client = MongoClient(uri, server_api=ServerApi('1'))
+    
+    try:
+        # 연결 테스트
+        client.admin.command('ping')
+        print("MongoDB 연결 성공!")
+        
+        # 데이터베이스 선택
+        db = client['insta09_database']
+        
+        # 컬렉션 매핑
+        collections = {
+            'feeds': db['01_test_newfeed_crawl_data'],
+            'influencers': db['02_test_influencer_data'],
+            'brands': db['08_test_brand_category_data']
+        }
+        
+        return client, collections
+    except Exception as e:
+        print(f"MongoDB 연결 실패: {str(e)}")
+        raise
+
+def update_influencer_data(item, collections):
     try:
         # 브랜드 카테고리 데이터 로드
-        with open('brand_category.json', 'r', encoding='utf-8') as f:
-            brand_category_data = json.load(f)
-
-        with open('2-2_influencer_processing_data.json', 'r', encoding='utf-8') as file:
-            influencer_data = json.load(file)
+        brands_collection = collections['brands']
+        brand_category_data = brands_collection.find_one()
+        
+        # 인플루언서 데이터 찾기
+        influencers_collection = collections['influencers']
+        influencer = influencers_collection.find_one({'username': item['author']})
         
         # 브랜드명 정규화 및 카테고리 찾기 함수
         def normalize_brand(brand_name):
-            for main_brand, info in brand_category_data['brands'].items():
-                if brand_name == main_brand or brand_name in info['aliases']:
-                    return {
-                        'name': main_brand,
-                        'category': info['category']
-                    }
+            brand_info = brands_collection.find_one({
+                '$or': [
+                    {'name': brand_name},
+                    {'aliases': brand_name}
+                ]
+            })
+            
+            if brand_info:
+                return {
+                    'name': brand_info['name'],
+                    'category': brand_info['category']
+                }
+            
             # 브랜드가 없는 경우 새로 추가
             if brand_name and brand_name != '확인필요':
-                brand_category_data['brands'][brand_name] = {
+                new_brand = {
+                    'name': brand_name,
                     'category': '',
                     'aliases': [],
                     'level': '',
                     'status': 'ready'
                 }
-                # brand_category.json 파일 업데이트
-                with open('brand_category.json', 'w', encoding='utf-8') as f:
-                    json.dump(brand_category_data, f, ensure_ascii=False, indent=2)
+                brands_collection.insert_one(new_brand)
                 return {
                     'name': brand_name,
                     'category': ''
@@ -165,93 +198,97 @@ def update_influencer_data(item):
                 'category': ''
             }
 
-        influencer_found = False
-        for influencer in influencer_data:
-            if influencer['username'] == item['작성자']:
-                influencer_found = True
-                if influencer.get('공구유무') != 'Y':
-                    influencer['공구유무'] = 'Y'
-                
-                brands = item['브랜드'].split(', ')
-                
-                for brand in brands:
-                    # 브랜드명 정규화 및 카테고리 찾기
-                    brand_info = normalize_brand(brand)
-                    normalized_brand_name = brand_info['name']
-                    
-                    # 1-1 JSON 파일의 브랜드명도 업데이트
-                    item['브랜드'] = normalized_brand_name
-                    
-                    # 기존 브랜드 찾기
-                    brand_exists = False
-                    for existing_brand in influencer['브랜드']:
-                        if existing_brand['name'] == normalized_brand_name:
-                            # 카테고리 업데이트
-                            existing_brand['category'] = brand_info['category']
-                            
-                            # 중복 체크
-                            product_exists = False
-                            for product in existing_brand['products']:
-                                # 작성시간에서 날짜만 추출하고 datetime 객체로 변환
-                                existing_date = datetime.strptime(product['mentioned_date'].split('T')[0], '%Y-%m-%d')
-                                new_date = datetime.strptime(item['작성시간'].split('T')[0], '%Y-%m-%d')
-                                
-                                # 날짜 차이 계산 (절대값)
-                                date_diff = abs((new_date - existing_date).days)
-                                
-                                if (product['item'] == item['공구상품'] and 
-                                    date_diff <= 20):  # 20일 이내면 중복으로 처리
-                                    product_exists = True
-                                    print(f"중복 상품 발견: {item['공구상품']} - 기존:{existing_date.date()} 신규:{new_date.date()} (차이: {date_diff}일)")
-                                    break
-                            
-                            # 중복이 아닌 경우에만 추가
-                            if not product_exists:
-                                existing_brand['products'].append({
-                                    'item': item['공구상품'],
-                                    'type': item['공구피드'],
-                                    'mentioned_date': item['작성시간'],
-                                    'expected_date': item['오픈예정일'],
-                                    'end_date': item['공구마감일'],
-                                    'item_feed_link': item['게시물링크'],
-                                    'preserve': ''
-                                })
-                            brand_exists = True
-                            break
-                    
-                    # 새로운 브랜드인 경우
-                    if not brand_exists:
-                        influencer['브랜드'].append({
-                            'name': normalized_brand_name,
-                            'category': brand_info['category'],
-                            'products': [{
-                                'item': item['공구상품'],
-                                'type': item['공구피드'],
-                                'mentioned_date': item['작성시간'],
-                                'expected_date': item['오픈예정일'],
-                                'end_date': item['공구마감일'],
-                                'item_feed_link': item['게시물링크'],
-                                'preserve': ''
-                            }]
-                        })
-                break
-        
-        # username이 없는 경우 로그 기록
-        if not influencer_found:
-            log_message = f"[{item['작성시간']}] 미등록 인플루언서 발견: {item['작성자']} (게시물링크: {item['게시물링크']})\n"
+        if not influencer:
+            # 미등록 인플루언서 로그 기록
+            log_message = f"[{item['cr_at']}] 미등록 인플루언서 발견: {item['author']} (게시물링크: {item['post_url']})\n"
             with open('unregistered_influencers.log', 'a', encoding='utf-8') as log_file:
                 log_file.write(log_message)
-            print(f"미등록 인플루언서 로그 기록: {item['작성자']}")
+            print(f"미등록 인플루언서 로그 기록: {item['author']}")
             return
-        
-        # 업데이트된 데이터 저장
-        with open('2-2_influencer_processing_data.json', 'w', encoding='utf-8') as file:
-            json.dump(influencer_data, file, ensure_ascii=False, indent=2)
+
+        # 공구유무 업데이트
+        if influencer.get('09_is') != 'Y':
+            influencers_collection.update_one(
+                {'username': item['author']},
+                {'$set': {'09_is': 'Y'}}
+            )
+
+        brands = item['09_brand'].split(', ')
+        for brand in brands:
+            brand_info = normalize_brand(brand)
+            normalized_brand_name = brand_info['name']
             
-        print(f"인플루언서 데이터 업데이트 완료: {item['작성자']}")
-        
+            # 브랜드 정보 업데이트
+            brand_data = {
+                'name': normalized_brand_name,
+                'category': brand_info['category'],
+                'products': [{
+                    'item': item['09_item'],
+                    'type': item['09_feed'],
+                    'mentioned_date': item['cr_at'],
+                    'expected_date': item['open_date'],
+                    'end_date': item['end_date'],
+                    'item_feed_link': item['post_url'],
+                    'preserve': ''
+                }]
+            }
+
+            # 중복 체크 및 업데이트
+            existing_brand = influencers_collection.find_one({
+                'username': item['author'],
+                'brand': {
+                    '$elemMatch': {
+                        'products': {
+                            '$elemMatch': {
+                                'mentioned_date': item['cr_at'],
+                                'item_feed_link': item['post_url']
+                            }
+                        }
+                    }
+                }
+            })
+
+            if existing_brand:
+                print(f"동일 게시글이 이미 존재합니다: {item['post_url']}")
+                continue
+
+            # 기존 브랜드 검색
+            existing_brand = influencers_collection.find_one({
+                'username': item['author'],
+                'brand.name': normalized_brand_name
+            })
+
+            if existing_brand:
+                # 중복 체크 로직 (20일 이내)
+                products = existing_brand['brand'][0]['products']
+                product_exists = False
+                
+                for product in products:
+                    existing_date = datetime.strptime(product['mentioned_date'].split('T')[0], '%Y-%m-%d')
+                    new_date = datetime.strptime(item['cr_at'].split('T')[0], '%Y-%m-%d')
+                    date_diff = abs((new_date - existing_date).days)
+                    
+                    if (product['item'] == item['09_item'] and date_diff <= 20):
+                        product_exists = True
+                        print(f"중복 상품 발견: {item['09_item']} - 기존:{existing_date.date()} 신규:{new_date.date()} (차이: {date_diff}일)")
+                        break
+
+                if not product_exists:
+                    influencers_collection.update_one(
+                        {'username': item['author'], 'brand.name': normalized_brand_name},
+                        {'$push': {'brand.$.products': brand_data['products'][0]}}
+                    )
+            else:
+                # 새 브랜드 추가
+                influencers_collection.update_one(
+                    {'username': item['author']},
+                    {'$push': {'brand': brand_data}}
+                )
+
+        print(f"인플루언서 데이터 업데이트 완료: {item['author']}")
+
     except Exception as e:
-        error_message = f"[{item['작성시간']}] 오류 발생 - 인플루언서: {item['작성자']}, 오류: {str(e)}\n"
+        error_message = f"[{item['cr_at']}] 오류 발생 - 인플루언서: {item['author']}, 오류: {str(e)}\n"
         with open('influencer_update_errors.log', 'a', encoding='utf-8') as error_file:
             error_file.write(error_message)
         print(f"인플루언서 데이터 업데이트 중 오류 발생: {str(e)}")
@@ -259,30 +296,48 @@ def update_influencer_data(item):
 def analyze_instagram_feed():
     try:
         # 환경 변수에서 API 키 로드
-        load_dotenv()  # .env 파일 로드
+        load_dotenv()
         client = anthropic.Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
         
-        # JSON 파일 읽기
-        with open('1-1_newfeed_crawl_data.json', 'r', encoding='utf-8') as file:
-            data = json.load(file)
+        # MongoDB 연결
+        mongo_client, collections = get_mongodb_connection()
+        feeds_collection = collections['feeds']
         
-        print(f"총 {len(data)}개의 게시글을 분석합니다...")
+        # 처리되지 않은 피드 데이터 조회
+        unprocessed_feeds = feeds_collection.find({
+            '$or': [
+                {'processed': False},
+                {'processed': {'$exists': False}}
+            ]
+        })
+        total_feeds = feeds_collection.count_documents({
+            '$or': [
+                {'processed': False},
+                {'processed': {'$exists': False}}
+            ]
+        })
+        
+        print(f"총 {total_feeds}개의 게시글을 분석합니다...")
         
         # 각 게시글 분석
-        for i, item in enumerate(data, start=1):
-            print(f"\n[{i}/{len(data)}] {i}번 게시글 분석 중...")
+        for i, item in enumerate(unprocessed_feeds, start=1):
+            print(f"\n[{i}/{total_feeds}] {i}번 게시글 분석 중...")
             
             try:
-                # 이미 처리된 데이터인지 확인 (09_feed 필드로 변경)
+                # 이미 처리된 데이터인지 확인 (09_feed 필드로 확인)
                 if item.get('09_feed'):
                     print(f"{i}번 게시글: 이미 처리된 데이터입니다. 건너뜁니다.")
+                    feeds_collection.update_one(
+                        {'_id': item['_id']},
+                        {'$set': {'processed': True}}
+                    )
                     continue
-                
-                # 본문 내용 확인 (content 필드로 변경)
+
+                # 본문 내용 확인
                 content = item.get('content')
                 if not content or not content.strip():
                     print(f"{i}번 게시글: 본문 내용이 비어있습니다.")
-                    continue
+                    continue  # processed를 True로 설정하지 않고 다음 게시물로 넘어감
                 
                 print(f"{i}번 게시글: 클로드 분석 요청 중...")
                 message = client.messages.create(
@@ -357,11 +412,11 @@ def analyze_instagram_feed():
                 
                 # '당일' 처리
                 if result['start_date'] == '당일':
-                    date_parts = item['작성시간'].split('T')[0].split('-')
+                    date_parts = item['cr_at'].split('T')[0].split('-')
                     result['start_date'] = f"{date_parts[1]}-{date_parts[2]}"
                     
                 if result['end_date'] == '당일':
-                    date_parts = item['작성시간'].split('T')[0].split('-')
+                    date_parts = item['cr_at'].split('T')[0].split('-')
                     result['end_date'] = f"{date_parts[1]}-{date_parts[2]}"
 
                 # 브랜드명이 비어있고 상품명이 있는 경우 '확인필요'로 설정
@@ -403,58 +458,60 @@ def analyze_instagram_feed():
                         return ''
 
                 # 날짜 검증 및 처리
-                created_date = item.get('cr_at')  # 작성시간 필드명 변경
+                created_date = item.get('cr_at')
+                
+                update_data = {}
                 
                 if result['is_group_buy'] in ['공구예고', '공구오픈', '공구리마인드']:
                     # 시작일 처리 - 이제 '당일' 처리는 위에서 완료됨
                     start_date = validate_date(str(result['start_date']), created_date)
                     end_date = validate_date(str(result['end_date']), created_date)
                     
-                    # 필드명 변경에 따른 데이터 업데이트
-                    item.update({
-                        '09_feed': result['is_group_buy'],  # 공구피드 -> 09_feed
-                        '09_item': str(result['product_name']),  # 공구상품 -> 09_item
-                        '09_brand': str(result['brand_name']),  # 브랜드 -> 09_brand
-                        'open_date': start_date,  # 오픈예정일 -> open_date
-                        'end_date': end_date,  # 공구마감일 -> end_date
-                        '09_item_category': ''  # 새로 추가된 카테고리 필드
-                    })
+                    update_data = {
+                        '09_feed': result['is_group_buy'],
+                        '09_item': str(result['product_name']),
+                        '09_brand': str(result['brand_name']),
+                        'open_date': start_date,
+                        'end_date': end_date,
+                        '09_item_category': '',
+                        'processed': True
+                    }
                     
-                    # 인플루언서 데이터 업데이트 - item 직접 전달
-                    update_influencer_data(item)
+                    # MongoDB 업데이트
+                    feeds_collection.update_one(
+                        {'_id': item['_id']},
+                        {'$set': update_data}
+                    )
                     
-                elif result['is_group_buy'] == '확인필요':
-                    item.update({
-                        '09_feed': '확인필요',
-                        '09_item': '',
-                        '09_brand': '',
-                        'open_date': '',
-                        'end_date': '',
-                        '09_item_category': ''
-                    })
+                    # 인플루언서 데이터 업데이트를 위해 item 업데이트
+                    item.update(update_data)
+                    update_influencer_data(item, collections)
                     
                 else:
-                    item.update({
-                        '09_feed': 'N',
+                    update_data = {
+                        '09_feed': 'N' if result['is_group_buy'] == 'N' else '확인필요',
                         '09_item': '',
                         '09_brand': '',
                         'open_date': '',
                         'end_date': '',
-                        '09_item_category': ''
-                    })
+                        '09_item_category': '',
+                        'processed': True
+                    }
+                    
+                    feeds_collection.update_one(
+                        {'_id': item['_id']},
+                        {'$set': update_data}
+                    )
                 
-                # JSON 파일 저장
-                with open('1-1_newfeed_crawl_data.json', 'w', encoding='utf-8') as f:
-                    json.dump(data, f, ensure_ascii=False, indent=2)
-                
+                # 각 게시글 분석 완료 후 1초 대기
                 print(f"{i}번 게시글: 처리 완료")
-                time.sleep(1)
                 
             except Exception as e:
                 print(f"{i}번 게시글: 처리 중 오류 발생 - {str(e)}")
                 continue
         
         print("\n모든 분석이 완료되었습니다.")
+        mongo_client.close()
         
     except Exception as e:
         print(f"오류 발생: {str(e)}")
