@@ -165,9 +165,9 @@ options.add_experimental_option("excludeSwitches", ["enable-logging"])
 
 # 절대경로에서 상대경로로 변경
 #-- 성남집
-# user_data_dir = os.path.join(os.path.dirname(__file__), "user_data", "sn_goyamedia_feed") 
+# user_data_dir = os.path.join(os.path.dirname(__file__), "user_data", "home_goyamedia_feed
 #-- 오피스
-user_data_dir = os.path.join(os.path.dirname(__file__), "user_data", "home_goyamedia_feed") 
+user_data_dir = os.path.join(os.path.dirname(__file__), "user_data", "office_goyamedia_feed") 
 options.add_argument(f"user-data-dir={user_data_dir}")
 
 # 캐시와 임시 파일 정리 (로그인 정보 유지)
@@ -474,7 +474,7 @@ def main_crawling():
         print(f"크롤링 실행 중 오류 발생: {str(e)}")
         return "ERROR"
 
-def log_session_status(status, posts_count=None):
+def log_session_status(status, posts_count=None, total_posts=None):
     """세션 상태를 로그 파일에 기록"""
     log_file = os.path.join(os.path.dirname(__file__), "newfeed_crawl_sessions.txt")
     kst = timezone(timedelta(hours=9))
@@ -482,7 +482,9 @@ def log_session_status(status, posts_count=None):
     
     log_message = f"[{timestamp}] {status}"
     if posts_count is not None:
-        log_message += f" - 수집된 게시물: {posts_count}개"
+        log_message += f" - 이번 세션 수집: {posts_count}개"
+    if total_posts is not None:
+        log_message += f" (현재 DB 총 게시물: {total_posts}개)"
     
     with open(log_file, 'a', encoding='utf-8') as f:
         f.write(log_message + "\n")
@@ -490,8 +492,9 @@ def log_session_status(status, posts_count=None):
 def run_crawler():
     while True:
         try:
-            # 세션 시작 로그
-            log_session_status("새로운 크롤링 세션 시작")
+            # 세션 시작 로그 (현재 총 게시물 수 포함)
+            total_posts = collection.count_documents({})
+            log_session_status("새로운 크롤링 세션 시작", total_posts=total_posts)
             
             # MongoDB에서 초기 게시물 수 확인
             initial_post_count = collection.count_documents({})
@@ -512,8 +515,8 @@ def run_crawler():
             final_post_count = collection.count_documents({})
             posts_added = final_post_count - initial_post_count
             
-            # 세션 종료 로그
-            log_session_status("크롤링 세션 종료", posts_added)
+            # 세션 종료 로그 (수집된 게시물 수와 현재 총 게시물 수 포함)
+            log_session_status("크롤링 세션 종료", posts_added, final_post_count)
             
             print("\n10회의 크롤링이 완료되었습니다.")
             
@@ -522,11 +525,13 @@ def run_crawler():
             time.sleep(rest_time)
             
         except KeyboardInterrupt:
-            log_session_status("사용자에 의한 크롤링 중단")
+            total_posts = collection.count_documents({})
+            log_session_status("사용자에 의한 크롤링 중단", total_posts=total_posts)
             print("\n사용자가 크롤링을 중단했습니다.")
             break
         except Exception as e:
-            log_session_status(f"오류 발생: {str(e)}")
+            total_posts = collection.count_documents({})
+            log_session_status(f"오류 발생: {str(e)}", total_posts=total_posts)
             print(f"\n크롤링 중 오류 발생: {str(e)}")
             print("5분 후 다시 시도합니다...")
             time.sleep(300)
