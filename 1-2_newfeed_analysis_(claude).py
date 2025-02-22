@@ -1,34 +1,27 @@
 """
 인스타그램 피드 분석 스크립트
 
-입력 파일:
-1. 1-1_newfeed_crawl_data.json
+데이터베이스 구조:
+1. 01_test_newfeed_crawl_data (컬렉션)
    - 크롤링된 인스타그램 피드 원본 데이터
    - 포함 정보: 게시물 ID, 본문 내용, 작성일, 작성자 정보 등
+   - 분석 결과 필드: 공구 여부, 상품명, 브랜드명, 공구 시작일/종료일
 
-2. 2-2_influencer_processing_data.json
+2. 02_test_influencer_data (컬렉션)
    - 인플루언서 정보 데이터
-   - 포함 정보: 인플루언서 ID, 공구유무, 브랜드/상품 정보 등
+   - 포함 정보: 인플루언서 ID, 공구유무(09_is), 브랜드/상품 정보
+   - 브랜드별 상품 이력 관리 (20일 이내 중복 체크)
 
-3. brand_category.json
+3. 08_test_brand_category_data (컬렉션)
    - 브랜드 카테고리 관리 데이터
    - 포함 정보: 브랜드명, 카테고리 분류 정보, 별칭(aliases), 레벨, 상태
 
-출력/업데이트 파일:
-1. 1-1_newfeed_crawl_data.json
-   - 분석 결과가 추가된 피드 데이터
-   - 추가되는 정보: 공구 여부, 상품명, 브랜드명, 공구 시작일/종료일
-
-2. 2-2_influencer_processing_data.json
-   - 업데이트되는 인플루언서 정보
-   - 변경사항: 공구유무 상태, 새로운 브랜드/상품 정보
-   - 브랜드별 상품 이력 관리 (20일 이내 중복 체크)
-
-3. unregistered_influencers.log
+로그 파일:
+1. unregistered_influencers.log
    - 미등록 인플루언서 정보 기록
    - 포함 정보: 발견 시간, 인플루언서명, 게시물 링크
 
-4. influencer_update_errors.log
+2. influencer_update_errors.log
    - 데이터 처리 중 발생하는 오류 로그
    - 포함 정보: 시간, 인플루언서명, 오류 내용
 
@@ -40,25 +33,26 @@
    - 에러 발생 시 해당 게시물 ID와 에러 내용
    - 전체 분석 완료 메시지
 
-2. JSON 파일 업데이트
-   예시) 1-1_newfeed_crawl_data.json:
+2. MongoDB 데이터 업데이트
+   예시) 01_test_newfeed_crawl_data:
    {
-     "작성자": "인플루언서명",
-     "본문": "게시물 내용",
-     "작성시간": "2024-03-15T14:30:00",
-     "공구피드": "공구오픈",
-     "공구상품": "상품명",
-     "브랜드": "브랜드명",
-     "오픈예정일": "2024-03-15",
-     "공구마감일": "2024-03-20"
+     "author": "인플루언서명",
+     "content": "게시물 내용",
+     "cr_at": "2024-03-15T14:30:00",
+     "09_feed": "공구오픈",
+     "09_item": "상품명",
+     "09_brand": "브랜드명",
+     "open_date": "2024-03-15",
+     "end_date": "2024-03-20",
+     "processed": true
    }
 
-3. 인플루언서 데이터 업데이트
-   예시) 2-2_influencer_processing_data.json:
+3. 인플루언서 데이터 구조
+   예시) 02_test_influencer_data:
    {
      "username": "인플루언서명",
-     "공구유무": "Y",
-     "브랜드": [
+     "09_is": "Y",
+     "brand": [
        {
          "name": "브랜드명",
          "category": "카테고리",
@@ -78,12 +72,12 @@
    }
 
 기능:
-1. JSON 파일에서 인스타그램 피드 데이터를 읽어옴
+1. MongoDB에서 인스타그램 피드 데이터를 읽어옴
 2. Claude AI를 사용하여 각 게시물 분석:
    - 공구 게시물 여부 판단 (공구예고/공구오픈/공구리마인드/확인필요/N)
    - 상품명, 브랜드명 추출
    - 공구 시작일/종료일 추출
-3. 분석 결과를 JSON 파일에 자동 업데이트
+3. 분석 결과를 MongoDB에 자동 업데이트
 4. 인플루언서 데이터 자동 업데이트
 5. 브랜드 카테고리 관리 및 자동 등록
 
@@ -101,7 +95,7 @@
    - 연도 미지정시 현재 연도 사용
 
 3. 브랜드 처리:
-   - brand_category.json에서 브랜드 정규화
+   - 08_test_brand_category_data에서 브랜드 정규화
    - 미등록 브랜드 자동 등록 (status: 'ready')
    - 별칭(aliases) 관리 지원
 
@@ -118,6 +112,14 @@
 - API 호출 제한 방지를 위한 딜레이 포함
 - 이미 처리된 데이터는 건너뜀
 - 브랜드명 누락시 '확인필요'로 설정
+
+데이터베이스:
+- MongoDB Atlas 사용
+- 데이터베이스명: insta09_database
+- 컬렉션:
+  * 01_test_newfeed_crawl_data: 크롤링된 피드 데이터
+  * 02_test_influencer_data: 인플루언서 정보
+  * 08_test_brand_category_data: 브랜드 카테고리 관리
 """
 
 
