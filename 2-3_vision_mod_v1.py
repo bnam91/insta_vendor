@@ -7,16 +7,16 @@
 인스타그램 피드 분석 및 카테고리 분류 프로그램
 
 [데이터 흐름]
-1. 입력 파일: 2-2_influencer_processing_data.json
-   - 공구유무가 'Y'이고 카테고리가 비어있는 계정 추출
-   - 프로필 링크
-   - 소개글 정보
+1. MongoDB 컬렉션: insta09_database.02_test_influencer_data
+   - 공구유무('09_is')가 'Y'이고 카테고리가 비어있는 계정 추출
+   - 프로필 링크(profile_link)
+   - 소개글 정보(bio)
 
-2. 출력/업데이트 파일: 2-2_influencer_processing_data.json
+2. MongoDB 업데이트
    - 업데이트 항목:
-     * 카테고리 (Vision API 분석 결과)
-     * 이미지URL (ImgBB 업로드 링크)
-     * 릴스평균조회수 (최근 15개)
+     * 카테고리(category) (Vision API 분석 결과)
+     * 이미지URL(image_url) (ImgBB 업로드 링크)
+     * 릴스평균조회수(reels_views(15)) (최근 15개)
 
 [주요 처리 로직]
 1. 이미지 처리
@@ -41,7 +41,7 @@
    - 자연스러운 스크롤 동작
 
 [실행 조건]
-- 공구유무가 'Y'인 계정만 처리
+- 공구유무('09_is')가 'Y'인 계정만 처리
 - 카테고리가 이미 있는 계정은 제외
 - 최소 15개 이상의 피드 이미지 필요
 - 모든 에러는 로그로 기록하고 다음 계정으로 진행
@@ -76,6 +76,8 @@ import io
 import matplotlib.pyplot as plt
 import json
 from dotenv import load_dotenv
+from pymongo import MongoClient
+from pymongo.server_api import ServerApi
 
 load_dotenv()  # .env 파일 로드
 
@@ -128,26 +130,36 @@ driver = webdriver.Chrome(options=options)
 # 공구유무가 'Y'이고 카테고리가 비어있는 계정만 추출
 def get_instagram_urls():
     try:
-        # JSON 파일 읽기
-        json_file_path = os.path.join(os.path.dirname(__file__), '2-2_influencer_processing_data.json')
-        with open(json_file_path, 'r', encoding='utf-8') as f:
-            influencer_data = json.load(f)
+        # MongoDB 연결
+        uri = os.getenv('MONGODB_URI', "mongodb+srv://coq3820:JmbIOcaEOrvkpQo1@cluster0.qj1ty.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
+        client = MongoClient(uri, server_api=ServerApi('1'))
         
-        # JSON 데이터에서 공구유무가 'Y'이고 카테고리가 비어있는 항목 찾기
+        # 데이터베이스와 컬렉션 선택
+        db = client['insta09_database']
+        collection = db['02_test_influencer_data']
+        
+        # 공구유무가 'Y'이고 카테고리가 비어있는 계정 찾기
         target_rows = []
-        total_accounts = 0
-        processed_accounts = 0
+        total_accounts = collection.count_documents({"09_is": "Y"})
+        processed_accounts = collection.count_documents({
+            "09_is": "Y",
+            "category": {"$exists": True, "$ne": ""}
+        })
         
-        for influencer in influencer_data:
-            if influencer.get('09_is') == 'Y':  # 변경된 필드명
-                total_accounts += 1
-                if influencer.get('category'):  # 변경된 필드명
-                    processed_accounts += 1
-                    continue  # 이미 카테고리가 있는 경우 건너뛰기
-                target_rows.append({
-                    'url': influencer['profile_link'],
-                    'description': influencer.get('bio', '')  # 변경된 필드명
-                })
+        # 처리가 필요한 계정 찾기
+        cursor = collection.find({
+            "09_is": "Y",
+            "$or": [
+                {"category": {"$exists": False}},
+                {"category": ""}
+            ]
+        })
+        
+        for doc in cursor:
+            target_rows.append({
+                'url': doc['profile_link'],
+                'description': doc.get('bio', '')
+            })
         
         if not target_rows:
             print("처리할 새로운 URL이 없습니다. 모든 카테고리가 이미 분석되었습니다.")
