@@ -492,23 +492,7 @@ def load_and_update_mongodb_data():
                 "keywords": "",
                 "reels_views(15)": "",
                 "image_url": "",
-                "brand": [
-                    {
-                        "name": "",  # 브랜드명 -- 닌자
-                        "category": "",  # 브랜드 카테고리 -- 주방가전
-                        "products": [
-                            {
-                                "item": "",  # 아이템명 -- 닌자올인원블렌더
-                                "type": "",  # 유형 -- (공구오픈,예고) 
-                                "mentioned_date": "",  # 언급된날짜 -- 2025-02-09T00:00:10.000Z
-                                "expected_date": "",  # 오픈예정일
-                                "end_date": "",  # 공구마감일
-                                "item_feed_link": "",  # 아이템 피드 링크 -- https://www.instagram.com/p/xxx
-                                "preserve": ""  # 보존 여부
-                            }
-                        ]
-                    }
-                ],
+                "brand": [],  # 브랜드 배열 필드, 자동 생성됨
                 "content_score": 1,
                 "follower_score": "",
                 "post_score": "",
