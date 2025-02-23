@@ -238,7 +238,67 @@ if category_search:
 # 검색 버튼 클릭 처리
 elif search_button:
     try:
-        if search_type == "인플루언서":
+        if search_type == "브랜드":
+            # 02_test_influencer_data 컬렉션에서 검색
+            collection = db['02_test_influencer_data']
+            
+            # brand.name에 검색어가 포함된 경우 검색 (대소문자 구분 없이)
+            query = {
+                "brand": {
+                    "$elemMatch": {
+                        "name": {"$regex": search_input, "$options": "i"}
+                    }
+                }
+            }
+            
+            # find()를 사용하여 모든 일치하는 문서 검색
+            brand_data_list = list(collection.find(query))
+            
+            if brand_data_list:
+                items_data = []
+                
+                # 각 인플루언서의 데이터를 처리
+                for influencer_data in brand_data_list:
+                    for brand in influencer_data.get('brand', []):
+                        # 검색한 브랜드명과 일치하는 경우만 처리
+                        if search_input.lower() in brand.get('name', '').lower():
+                            brand_name = brand.get('name', '')
+                            
+                            for product in brand.get('products', []):
+                                item_data = {
+                                    '인플루언서': influencer_data.get('clean_name', ''),
+                                    '아이디': influencer_data.get('username', ''),
+                                    '팔로워': influencer_data.get('followers', ''),
+                                    '카테고리': influencer_data.get('category', ''),
+                                    '등급': influencer_data.get('grade', ''),
+                                    '브랜드명': brand_name,
+                                    '아이템명': product.get('item', ''),
+                                    '타입': product.get('type', ''),
+                                    '언급일자': product.get('mentioned_date', ''),
+                                    '예상일자': product.get('expected_date', ''),
+                                    '종료일자': product.get('end_date', ''),
+                                    '피드링크': product.get('item_feed_link', ''),
+                                    '릴스조회수': influencer_data.get('reels_views(15)', '0')
+                                }
+                                items_data.append(item_data)
+                
+                if items_data:
+                    display_df = pd.DataFrame(items_data)
+                    columns_order = [
+                        '인플루언서', '아이디', '팔로워', '릴스조회수', '카테고리', '등급',
+                        '브랜드명', '아이템명', '타입', '언급일자', '예상일자', 
+                        '종료일자', '피드링크'
+                    ]
+                    display_df = display_df[columns_order]
+                    st.write(f"브랜드 '{search_input}'에 대해 총 {len(items_data)}개의 아이템이 검색되었습니다.")
+                else:
+                    display_df = empty_df
+                    st.warning("해당 브랜드의 아이템 정보가 없습니다.")
+            else:
+                display_df = empty_df
+                st.warning("검색어와 일치하는 브랜드를 찾을 수 없습니다.")
+        
+        elif search_type == "인플루언서":
             # 02_test_influencer_data 컬렉션에서 검색
             collection = db['02_test_influencer_data']
             
@@ -265,7 +325,7 @@ elif search_button:
                         for product in brand.get('products', []):
                             item_data = {
                                 '인플루언서': influencer_data.get('clean_name', ''),
-                                'username': influencer_data.get('username', ''),
+                                '아이디': influencer_data.get('username', ''),
                                 '팔로워': influencer_data.get('followers', ''),
                                 '카테고리': influencer_data.get('category', ''),
                                 '등급': influencer_data.get('grade', ''),
@@ -276,16 +336,16 @@ elif search_button:
                                 '예상일자': product.get('expected_date', ''),
                                 '종료일자': product.get('end_date', ''),
                                 '피드링크': product.get('item_feed_link', ''),
-                                '보존여부': product.get('preserve', '')
+                                '릴스조회수': influencer_data.get('reels_views(15)', '0')
                             }
                             items_data.append(item_data)
                 
                 if items_data:
                     display_df = pd.DataFrame(items_data)
                     columns_order = [
-                        '등급', '인플루언서', 'username', '팔로워', '카테고리', 
-                        '브랜드명', '아이템명', '타입', '언급일자', '예상일자', 
-                        '종료일자', '피드링크', '보존여부'
+                        '브랜드명', '아이템명', '등급', '인플루언서', '아이디', 
+                        '팔로워', '릴스조회수', '카테고리', 
+                        '언급일자', '타입', '예상일자', '종료일자', '피드링크'
                     ]
                     display_df = display_df[columns_order]
                     st.write(f"검색어 '{search_input}'에 대해 총 {len(items_data)}개의 아이템이 검색되었습니다.")
@@ -295,6 +355,70 @@ elif search_button:
             else:
                 display_df = empty_df
                 st.warning("검색어와 일치하는 인플루언서를 찾을 수 없습니다.")
+        
+        elif search_type == "아이템":
+            # 02_test_influencer_data 컬렉션에서 검색
+            collection = db['02_test_influencer_data']
+            
+            # products.item에 검색어가 포함된 경우 검색 (대소문자 구분 없이)
+            query = {
+                "brand": {
+                    "$elemMatch": {
+                        "products": {
+                            "$elemMatch": {
+                                "item": {"$regex": search_input, "$options": "i"}
+                            }
+                        }
+                    }
+                }
+            }
+            
+            # find()를 사용하여 모든 일치하는 문서 검색
+            item_data_list = list(collection.find(query))
+            
+            if item_data_list:
+                items_data = []
+                
+                # 각 인플루언서의 데이터를 처리
+                for influencer_data in item_data_list:
+                    for brand in influencer_data.get('brand', []):
+                        brand_name = brand.get('name', '')
+                        
+                        for product in brand.get('products', []):
+                            # 검색한 아이템명과 일치하는 경우만 처리
+                            if search_input.lower() in product.get('item', '').lower():
+                                item_data = {
+                                    '아이템명': product.get('item', ''),
+                                    '브랜드명': brand_name,
+                                    '타입': product.get('type', ''),
+                                    '인플루언서': influencer_data.get('clean_name', ''),
+                                    '아이디': influencer_data.get('username', ''),
+                                    '팔로워': influencer_data.get('followers', ''),
+                                    '릴스조회수': influencer_data.get('reels_views(15)', '0'),
+                                    '카테고리': influencer_data.get('category', ''),
+                                    '등급': influencer_data.get('grade', ''),
+                                    '언급일자': product.get('mentioned_date', ''),
+                                    '예상일자': product.get('expected_date', ''),
+                                    '종료일자': product.get('end_date', ''),
+                                    '피드링크': product.get('item_feed_link', '')
+                                }
+                                items_data.append(item_data)
+                
+                if items_data:
+                    display_df = pd.DataFrame(items_data)
+                    columns_order = [
+                        '브랜드명', '아이템명', '등급', '인플루언서', '아이디', 
+                        '팔로워', '릴스조회수', '카테고리', 
+                        '언급일자', '타입', '예상일자', '종료일자', '피드링크'
+                    ]
+                    display_df = display_df[columns_order]
+                    st.write(f"아이템 '{search_input}'에 대해 총 {len(items_data)}개의 결과가 검색되었습니다.")
+                else:
+                    display_df = empty_df
+                    st.warning("해당 아이템 정보가 없습니다.")
+            else:
+                display_df = empty_df
+                st.warning("검색어와 일치하는 아이템을 찾을 수 없습니다.")
         
         else:
             # 기존의 브랜드, 아이템 검색 로직
