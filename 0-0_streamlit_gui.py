@@ -3,8 +3,12 @@ from pymongo import MongoClient
 from pymongo.server_api import ServerApi
 import pandas as pd
 
-# 페이지 레이아웃을 wide 모드로 설정
-st.set_page_config(layout="wide", page_title="인스타그램 데이터 분석 대시보드")
+# 페이지 레이아웃을 wide 모드로 설정하고 사이드바를 초기에 닫힌 상태로 설정
+st.set_page_config(
+    layout="wide", 
+    page_title="🚀 인스타그램 데이터 분석 대시보드",
+    initial_sidebar_state="collapsed"  # 사이드바 초기 상태를 닫힌 상태로 설정
+)
 
 # 페이지 여백 줄이기
 st.markdown("""
@@ -81,7 +85,7 @@ with st.sidebar:
         st.button("오늘의 아이템 찾기", key="today_item")
     
     # SNS 분석 섹션
-    with st.expander("📱SNS 분석"):
+    with st.expander("👥SNS 분석"):
         st.button("팔로잉 추출", key="following_extract")
         st.button("인플루언서 분석", key="influencer_analysis")
         st.button("비전 분석", key="vision_analysis")
@@ -102,7 +106,7 @@ db = client['insta09_database']
 collections = ['02_test_influencer_data', '01_test_newfeed_crawl_data']
 
 # 페이지 제목
-st.title('인스타그램 데이터 분석 대시보드')
+st.title('🚀인스타그램 데이터 분석 대시보드')
 
 # 컬렉션 선택 콤보박스
 selected_collection = st.selectbox('컬렉션 선택', 
@@ -112,15 +116,15 @@ selected_collection = st.selectbox('컬렉션 선택',
 # 좌우 여백을 위한 컬럼 추가하여 중앙 정렬 (빈 칼럼 추가)
 left_space, col1, col2, col3, empty1, col4, col5, col6, empty2, col7, col8, right_space = st.columns(
     [
-        0.1,  # 왼쪽 여백
-        2.8,    # 첫 번째 컬럼 (검색 타입)
-        2,    # 두 번째 컬럼 (검색 입력)
-        1,    # 검색 버튼
+        0.01,  # 왼쪽 여백
+        3,    # 첫 번째 컬럼 (검색 타입)
+        1.5,    # 두 번째 컬럼 (검색 입력)
+        0.8,    # 검색 버튼
         0.5, # 빈 공간
         1.5,  # 다섯 번째 컬럼 (카테고리 선택)
-        1,    # 여섯 번째 컬럼 (카테고리 검색 입력)
-        1.5,  # 카테고리 검색 버튼
-        2,   # 빈 공간
+        0.7,    # 여섯 번째 컬럼 (퍼센트 입력)
+        1,  # 카테고리 검색 버튼
+        0.5,   # 빈 공간
         1,  # 아홉 번째 컬럼 (엑셀 저장 버튼)
         1,    # 열 번째 컬럼 (초기화 버튼)
         0.1   # 오른쪽 여백
@@ -153,7 +157,7 @@ with col4:
                              key="category_select")
 
 with col5:
-    category_input = st.text_input("", placeholder="퍼센트 입력")
+    category_input = st.text_input("", placeholder="%")
 
 with col6:
     category_search = st.button("카테고리 검색")
