@@ -63,7 +63,7 @@ st.markdown("""
         }
         /* 데이터프레임 스타일링 */
         .stDataFrame {
-            margin-top: -10px;
+            margin-top: -18px;
         }
     </style>
     """, unsafe_allow_html=True)
@@ -105,7 +105,9 @@ collections = ['02_test_influencer_data', '01_test_newfeed_crawl_data']
 st.title('인스타그램 데이터 분석 대시보드')
 
 # 컬렉션 선택 콤보박스
-selected_collection = st.selectbox('컬렉션 선택', collections, key="collection_select")
+selected_collection = st.selectbox('컬렉션 선택', 
+                                 options=['empty_data'] + collections,  # 'empty_data'를 첫 번째 옵션으로 추가
+                                 key="collection_select")
 
 # 좌우 여백을 위한 컬럼 추가하여 중앙 정렬 (빈 칼럼 추가)
 left_space, col1, col2, col3, empty1, col4, col5, col6, empty2, col7, col8, right_space = st.columns(
@@ -144,9 +146,11 @@ with empty1:
     st.empty()
 
 with col4:
-    category = st.selectbox('', ['카테고리1', '카테고리2', '카테고리3'], 
-                          placeholder="카테고리 선택",
-                          key="category_select")
+    category = st.selectbox('', 
+                             ['뷰티', '패션', '홈/리빙', '푸드', '육아', 
+                              '건강', '맛집탐방', '전시/공연', '반려동물', '기타'], 
+                             placeholder="카테고리 선택",
+                             key="category_select")
 
 with col5:
     category_input = st.text_input("", placeholder="퍼센트 입력")
@@ -169,28 +173,88 @@ with right_space:
 # 데이터 표시 영역
 st.divider()
 
-try:
-    # 선택된 컬렉션에서 데이터 가져오기
-    collection = db[selected_collection]
-    data = list(collection.find({}, {'_id': 0}))
-    
-    if data:
-        # 데이터를 DataFrame으로 변환
-        df = pd.DataFrame(data)
-        
-        # 숫자형 컬럼의 빈 문자열을 NaN으로 변환
-        for col in df.columns:
-            if 'views' in col or 'likes' in col or 'comments' in col:
-                df[col] = pd.to_numeric(df[col], errors='coerce')
-        
-        # DataFrame을 테이블로 표시
-        st.dataframe(df, use_container_width=True, height=600)
-        st.write(f"총 {len(data)}개의 데이터가 있습니다.")
-    else:
-        st.warning("데이터가 없습니다.")
+# 빈 데이터프레임 생성
+empty_df = pd.DataFrame()
 
-except Exception as e:
-    st.error(f"데이터 로딩 중 오류 발생: {e}")
+# 카테고리 검색 처리
+if category_search:
+    try:
+        # 입력값 검증
+        if not category:
+            st.warning("카테고리를 선택해주세요.")
+        elif not category_input:
+            st.warning("퍼센트를 입력해주세요.")
+        else:
+            # 퍼센트 값을 숫자로 변환
+            try:
+                percent_threshold = float(category_input)
+            except ValueError:
+                st.error("올바른 숫자를 입력해주세요.")
+                percent_threshold = 0
+
+            # 02_test_influencer_data 컬렉션에서 데이터 가져오기
+            collection = db['02_test_influencer_data']
+            data = list(collection.find({}, {'_id': 0}))
+            
+            if data:
+                df = pd.DataFrame(data)
+                filtered_data = []
+                
+                for _, row in df.iterrows():
+                    if pd.notna(row.get('category')) and row['category']:
+                        categories = row['category'].split(',')
+                        for cat in categories:
+                            if category in cat:
+                                try:
+                                    percent_str = cat.split('(')[1].rstrip('%)')
+                                    percent = float(percent_str)
+                                    if percent >= percent_threshold:
+                                        filtered_data.append(row)
+                                        break
+                                except Exception as e:
+                                    continue
+                
+                filtered_df = pd.DataFrame(filtered_data)
+                
+                if not filtered_data:
+                    st.warning(f"{category} 카테고리에서 {percent_threshold}% 이상인 데이터가 없습니다.")
+                    display_df = empty_df
+                else:
+                    display_df = filtered_df
+                    st.write(f"총 {len(filtered_data)}개의 데이터가 있습니다.")
+            else:
+                st.warning("데이터가 없습니다.")
+                display_df = empty_df
+                
+    except Exception as e:
+        st.error(f"카테고리 검색 중 오류 발생: {e}")
+        display_df = empty_df
+
+else:
+    # 기존 컬렉션 선택 로직
+    try:
+        if selected_collection and selected_collection != 'empty_data':
+            collection = db[selected_collection]
+            data = list(collection.find({}, {'_id': 0}))
+            
+            if data:
+                df = pd.DataFrame(data)
+                for col in df.columns:
+                    if 'views' in col or 'likes' in col or 'comments' in col:
+                        df[col] = pd.to_numeric(df[col], errors='coerce')
+                display_df = df
+                st.write(f"총 {len(data)}개의 데이터가 있습니다.")
+            else:
+                display_df = empty_df
+                st.warning("데이터가 없습니다.")
+        else:
+            display_df = empty_df
+    except Exception as e:
+        st.error(f"데이터 로딩 중 오류 발생: {e}")
+        display_df = empty_df
+
+# 최종 데이터프레임 표시
+st.dataframe(display_df, use_container_width=True, height=600, key="main_data_frame")
 
 # MongoDB 연결 확인
 try:
