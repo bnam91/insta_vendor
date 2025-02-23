@@ -70,6 +70,15 @@ st.markdown("""
         .stDataFrame {
             margin-top: -18px;
         }
+        /* 컬렉션 선택 콤보박스 마진 조정 */
+        [data-testid="stSelectbox"] {
+            margin-bottom: -10px;
+        }
+        /* 구분선(divider) 마진 조정 */
+        .element-container:has([data-testid="stMarkdownContainer"]) hr {
+            margin-top: 10px;
+            margin-bottom: 20px;
+        }
     </style>
     """, unsafe_allow_html=True)
 
@@ -147,10 +156,10 @@ with st.sidebar:
     
     # 데이터 분석 섹션
     with st.expander("📊데이터 분석"):
-        if st.button("오늘의 피드", key="today_feed"):
-            run_script('1-1_newfeed_crawl.py', '오늘의 피드', st.empty())
+        if st.button("오늘의 피드 크롤링", key="today_feed"):
+            run_script('1-1_newfeed_crawl.py', '오늘의 피드 크롤링', st.empty())
         if st.button("클로드 추출", key="brand_extract"):
-            run_script('st_test2.py', '클로드 추출', st.empty())
+            run_script('1-2_newfeed_analysis_(claude).py', '클로드 추출', st.empty())
         if st.button("브랜드 중복체크", key="brand_check"):
             run_script('st_test2.py', '브랜드 중복체크', st.empty())
         if st.button("아이템 중복체크", key="item_check"):
