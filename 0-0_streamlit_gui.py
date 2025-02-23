@@ -98,6 +98,49 @@ def run_script(script_name, button_name, output_container):
         st.toast(f'{button_name} 실행 중 오류가 발생했습니다.', icon='❌')
         st.stop()
 
+# 팔로잉 추출을 위한 대화상자 함수 정의
+@st.dialog("팔로잉 추출")
+def following_extract_dialog():
+    st.write("인스타그램 프로필 URL 또는 사용자명을 입력하세요:")
+    
+    # 폼 버튼 중앙 정렬을 위한 CSS
+    st.markdown("""
+        <style>
+            .stFormSubmitButton {
+                display: flex;
+                justify-content: center;
+            }
+            .stFormSubmitButton button {
+                width: 20% !important;
+            }
+        </style>
+    """, unsafe_allow_html=True)
+    
+    with st.form("url_input_form"):
+        url = st.text_input("", placeholder="예: https://www.instagram.com/username/ 또는 username")
+        
+        if st.form_submit_button("확인"):
+            if url:
+                # URL 형식 처리
+                if not url.startswith('http'):
+                    url = url.strip('/')
+                    url = url.replace('instagram.com/', '')
+                    url = f'https://www.instagram.com/{url}/'
+                
+                try:
+                    # URL을 임시 파일에 저장
+                    with open('temp_profile_url.txt', 'w', encoding='utf-8') as f:
+                        f.write(url)
+                    # 스크립트 실행 상태 저장
+                    st.session_state.run_script = {
+                        'script_name': '2-1_following_extract.py',
+                        'button_name': '팔로잉 추출',
+                        'container': st.empty()
+                    }
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"URL 저장 중 오류 발생: {str(e)}")
+
 # MongoDB 연결 설정 전에 사이드바 추가
 with st.sidebar:
     st.header("메뉴")
@@ -105,9 +148,9 @@ with st.sidebar:
     # 데이터 분석 섹션
     with st.expander("📊데이터 분석"):
         if st.button("오늘의 피드", key="today_feed"):
-            run_script('st_test2.py', '오늘의 피드', st.empty())
-        if st.button("브랜드 추출", key="brand_extract"):
-            run_script('st_test2.py', '브랜드 추출', st.empty())
+            run_script('1-1_newfeed_crawl.py', '오늘의 피드', st.empty())
+        if st.button("클로드 추출", key="brand_extract"):
+            run_script('st_test2.py', '클로드 추출', st.empty())
         if st.button("브랜드 중복체크", key="brand_check"):
             run_script('st_test2.py', '브랜드 중복체크', st.empty())
         if st.button("아이템 중복체크", key="item_check"):
@@ -118,11 +161,22 @@ with st.sidebar:
     # SNS 분석 섹션
     with st.expander("👥SNS 분석"):
         if st.button("팔로잉 추출", key="following_extract"):
-            run_script('2-1_following_extract.py', '팔로잉 추출', st.empty())
+            following_extract_dialog()
+        
+        # 저장된 스크립트 실행 상태가 있으면 실행
+        if 'run_script' in st.session_state:
+            script_info = st.session_state.run_script
+            run_script(
+                script_info['script_name'],
+                script_info['button_name'],
+                script_info['container']
+            )
+            del st.session_state.run_script
+
         if st.button("인플루언서 분석", key="influencer_analysis"):
-            run_script('st_test3.py', '인플루언서 분석', st.empty())
+            run_script('2-2_influencer_processing_v2.py', '인플루언서 분석', st.empty())
         if st.button("비전 분석", key="vision_analysis"):
-            run_script('st_test3.py', '비전 분석', st.empty())
+            run_script('2-3_vision_mod_v1.py', '비전 분석', st.empty())
         if st.button("등급 분류", key="grade_classification"):
             run_script('st_test3.py', '등급 분류', st.empty())
     
