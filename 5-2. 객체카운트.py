@@ -5,12 +5,14 @@ def count_usernames(json_str):
     data = json.loads(json_str)
     
     # username이 있는 항목 수 계산
-    username_count = sum(1 for item in data if "username" in item)
+    # username_count = sum(1 for item in data if "username" in item)
+    username_count = sum(1 for item in data if "author" in item)
     
     return username_count
 
 # JSON 파일 내용을 문자열로 읽기
-with open('2-2_influencer_processing_data.json', 'r', encoding='utf-8') as file:
+with open('1-1_newfeed_crawl_data.json', 'r', encoding='utf-8') as file:
+# with open('2-2_influencer_processing_data.json', 'r', encoding='utf-8') as file:
     json_content = file.read()
 
 # username 개수 계산

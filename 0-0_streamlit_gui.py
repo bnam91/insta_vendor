@@ -156,16 +156,16 @@ with st.sidebar:
     
     # 데이터 분석 섹션
     with st.expander("📊데이터 분석"):
-        if st.button("오늘의 피드 크롤링", key="today_feed"):
-            run_script('1-1_newfeed_crawl.py', '오늘의 피드 크롤링', st.empty())
+        if st.button("뉴피드 크롤링", key="today_feed"):
+            run_script('1-1_newfeed_crawl.py', '뉴피드 크롤링', st.empty())
         if st.button("클로드 추출", key="brand_extract"):
             run_script('1-2_newfeed_analysis_(claude).py', '클로드 추출', st.empty())
         if st.button("브랜드 중복체크", key="brand_check"):
             run_script('st_test2.py', '브랜드 중복체크', st.empty())
         if st.button("아이템 중복체크", key="item_check"):
             run_script('st_test2.py', '아이템 중복체크', st.empty())
-        if st.button("오늘의 아이템 찾기", key="today_item"):
-            run_script('st_test2.py', '오늘의 아이템 찾기', st.empty())
+        if st.button("🌞오늘의 아이템 찾기", key="today_item"):
+            run_script('1-3_item_today.py', '오늘의 아이템 찾기', st.empty())
     
     # SNS 분석 섹션
     with st.expander("👥SNS 분석"):
@@ -204,7 +204,14 @@ client = MongoClient(uri, server_api=ServerApi('1'))
 
 # 데이터베이스 및 컬렉션 선택
 db = client['insta09_database']
-collections = ['02_test_influencer_data', '01_test_newfeed_crawl_data']
+collections = [
+    
+    '01_test_newfeed_crawl_data',
+    '02_test_influencer_data', 
+    '03_main_following_extract_data',
+    '04_test_item_today_data'
+    
+]
 
 # 페이지 제목
 st.title('🚀인스타그램 데이터 분석 대시보드')
@@ -570,7 +577,11 @@ st.dataframe(
     height=600,
     key="main_data_frame",
     column_config={
-        "피드링크": st.column_config.LinkColumn("피드링크")
+        "피드링크": st.column_config.LinkColumn("피드링크"),
+        "post_url": st.column_config.LinkColumn("post_url"),
+        "profile_link": st.column_config.LinkColumn("profile_link"),
+        "out_link": st.column_config.LinkColumn("out_link"),
+        "item_feed_link": st.column_config.LinkColumn("item_feed_link")
     }
 )
 

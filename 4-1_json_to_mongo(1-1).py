@@ -16,13 +16,23 @@ try:
     collection = db['01_test_newfeed_crawl_data']
     #  collection = db['02_test_influencer_data']
    
-    # username 필드에 유니크 인덱스 생성
+    # 기존 인덱스 삭제
     try:
-        collection.create_index('username', unique=True)
-        print("username 필드에 유니크 인덱스 생성 완료!")
+        if 'username_1' in collection.index_information():
+            collection.drop_index('username_1')
+            print("기존 username 인덱스 삭제 완료!")
+        else:
+            print("삭제할 username 인덱스가 없습니다.")
+    except Exception as e:
+        print(f"인덱스 삭제 중 오류 발생: {e}")
+        pass
+
+    # author 필드에 유니크 인덱스 생성
+    try:
+        collection.create_index('author', unique=True)
+        print("author 필드에 유니크 인덱스 생성 완료!")
     except Exception as e:
         print(f"인덱스 생성 중 오류 발생: {e}")
-        # 이미 인덱스가 존재하는 경우 계속 진행
         pass
 
     # JSON 파일 읽기
@@ -36,7 +46,7 @@ try:
         for doc in data:
             try:
                 collection.update_one(
-                    {'username': doc['username']},
+                    {'author': doc['author']},
                     {'$set': doc},
                     upsert=True
                 )
