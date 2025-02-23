@@ -175,6 +175,7 @@ st.divider()
 
 # 빈 데이터프레임 생성
 empty_df = pd.DataFrame()
+display_df = empty_df  # 초기값 설정
 
 # 카테고리 검색 처리
 if category_search:
@@ -230,31 +231,119 @@ if category_search:
         st.error(f"카테고리 검색 중 오류 발생: {e}")
         display_df = empty_df
 
-else:
-    # 기존 컬렉션 선택 로직
+# 검색 버튼 클릭 처리
+elif search_button:
     try:
-        if selected_collection and selected_collection != 'empty_data':
-            collection = db[selected_collection]
-            data = list(collection.find({}, {'_id': 0}))
+        if search_type == "인플루언서":
+            # 02_test_influencer_data 컬렉션에서 검색
+            collection = db['02_test_influencer_data']
             
-            if data:
-                df = pd.DataFrame(data)
-                for col in df.columns:
-                    if 'views' in col or 'likes' in col or 'comments' in col:
-                        df[col] = pd.to_numeric(df[col], errors='coerce')
-                display_df = df
-                st.write(f"총 {len(data)}개의 데이터가 있습니다.")
+            # username 또는 clean_name에 검색어가 포함된 경우 검색 (대소문자 구분 없이)
+            query = {
+                "$or": [
+                    {"username": {"$regex": search_input, "$options": "i"}},
+                    {"clean_name": {"$regex": search_input, "$options": "i"}}
+                ]
+            }
+            
+            # find()를 사용하여 모든 일치하는 문서 검색
+            influencer_data_list = list(collection.find(query))
+            
+            if influencer_data_list:  # influencer_data를 influencer_data_list로 변경
+                # 브랜드별 아이템 리스트 추출
+                items_data = []
+                
+                # 각 인플루언서의 데이터를 처리
+                for influencer_data in influencer_data_list:
+                    for brand in influencer_data.get('brand', []):
+                        brand_name = brand.get('name', '')
+                        
+                        for product in brand.get('products', []):
+                            item_data = {
+                                '인플루언서': influencer_data.get('clean_name', ''),
+                                'username': influencer_data.get('username', ''),
+                                '팔로워': influencer_data.get('followers', ''),
+                                '카테고리': influencer_data.get('category', ''),
+                                '등급': influencer_data.get('grade', ''),
+                                '브랜드명': brand_name,
+                                '아이템명': product.get('item', ''),
+                                '타입': product.get('type', ''),
+                                '언급일자': product.get('mentioned_date', ''),
+                                '예상일자': product.get('expected_date', ''),
+                                '종료일자': product.get('end_date', ''),
+                                '피드링크': product.get('item_feed_link', ''),
+                                '보존여부': product.get('preserve', '')
+                            }
+                            items_data.append(item_data)
+                
+                if items_data:
+                    display_df = pd.DataFrame(items_data)
+                    columns_order = [
+                        '등급', '인플루언서', 'username', '팔로워', '카테고리', 
+                        '브랜드명', '아이템명', '타입', '언급일자', '예상일자', 
+                        '종료일자', '피드링크', '보존여부'
+                    ]
+                    display_df = display_df[columns_order]
+                    st.write(f"검색어 '{search_input}'에 대해 총 {len(items_data)}개의 아이템이 검색되었습니다.")
+                else:
+                    display_df = empty_df
+                    st.warning("검색된 인플루언서의 아이템 정보가 없습니다.")
             else:
                 display_df = empty_df
-                st.warning("데이터가 없습니다.")
+                st.warning("검색어와 일치하는 인플루언서를 찾을 수 없습니다.")
+        
+        else:
+            # 기존의 브랜드, 아이템 검색 로직
+            if selected_collection and selected_collection != 'empty_data':
+                collection = db[selected_collection]
+                data = list(collection.find({}, {'_id': 0}))
+                
+                if data:
+                    df = pd.DataFrame(data)
+                    for col in df.columns:
+                        if 'views' in col or 'likes' in col or 'comments' in col:
+                            df[col] = pd.to_numeric(df[col], errors='coerce')
+                    display_df = df
+                    st.write(f"총 {len(data)}개의 데이터가 있습니다.")
+                else:
+                    display_df = empty_df
+                    st.warning("데이터가 없습니다.")
+            else:
+                display_df = empty_df
+    except Exception as e:
+        st.error(f"검색 중 오류가 발생했습니다: {e}")
+        display_df = empty_df
+
+# 컬렉션 선택 처리
+elif selected_collection and selected_collection != 'empty_data':
+    try:
+        collection = db[selected_collection]
+        data = list(collection.find({}, {'_id': 0}))
+        
+        if data:
+            df = pd.DataFrame(data)
+            for col in df.columns:
+                if 'views' in col or 'likes' in col or 'comments' in col:
+                    df[col] = pd.to_numeric(df[col], errors='coerce')
+            display_df = df
+            st.write(f"총 {len(data)}개의 데이터가 있습니다.")
         else:
             display_df = empty_df
+            st.warning("데이터가 없습니다.")
     except Exception as e:
         st.error(f"데이터 로딩 중 오류 발생: {e}")
         display_df = empty_df
 
-# 최종 데이터프레임 표시
-st.dataframe(display_df, use_container_width=True, height=600, key="main_data_frame")
+# 최종 데이터프레임 표시 (한 번만 호출)
+st.dataframe(
+    display_df,
+    use_container_width=True,
+    height=600,
+    key="main_data_frame",
+    column_config={
+        "피드링크": st.column_config.LinkColumn("피드링크")
+    }
+)
 
 # MongoDB 연결 확인
 try:
