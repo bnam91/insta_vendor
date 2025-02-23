@@ -2,6 +2,7 @@ import streamlit as st
 from pymongo import MongoClient
 from pymongo.server_api import ServerApi
 import pandas as pd
+import subprocess
 
 # 페이지 레이아웃을 wide 모드로 설정하고 사이드바를 초기에 닫힌 상태로 설정
 st.set_page_config(
@@ -72,30 +73,67 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
+# 파일 상단에 run_script 함수 추가
+def run_script(script_name, button_name, output_container):
+    try:
+        # 상태 메시지를 표시할 placeholder 생성
+        status = st.empty()
+        status.write(f'🟢 {button_name} 실행 중...')
+        # 시작 토스트 메시지
+        st.toast(f'{button_name}이(가) 시작되었습니다.', icon='🚀')
+        
+        # Windows에서 새 터미널 창을 열어 스크립트 실행
+        process = subprocess.Popen(f'start /wait cmd /K python {script_name}', shell=True)
+        
+        # 프로세스가 종료될 때까지 대기 (터미널 창이 닫힐 때까지)
+        process.wait()
+        
+        # 터미널이 실제로 닫힐 때 상태 업데이트
+        status.write(f'🔴 {button_name} 종료됨')
+        # 종료 토스트 메시지
+        st.toast(f'{button_name}이(가) 종료되었습니다.', icon='✅')
+        
+    except Exception as e:
+        st.error(f'오류가 발생했습니다: {str(e)}')
+        st.toast(f'{button_name} 실행 중 오류가 발생했습니다.', icon='❌')
+        st.stop()
+
 # MongoDB 연결 설정 전에 사이드바 추가
 with st.sidebar:
     st.header("메뉴")
     
     # 데이터 분석 섹션
     with st.expander("📊데이터 분석"):
-        st.button("오늘의 피드", key="today_feed")
-        st.button("브랜드 추출", key="brand_extract")
-        st.button("브랜드 중복체크", key="brand_check")
-        st.button("아이템 중복체크", key="item_check")
-        st.button("오늘의 아이템 찾기", key="today_item")
+        if st.button("오늘의 피드", key="today_feed"):
+            run_script('st_test2.py', '오늘의 피드', st.empty())
+        if st.button("브랜드 추출", key="brand_extract"):
+            run_script('st_test2.py', '브랜드 추출', st.empty())
+        if st.button("브랜드 중복체크", key="brand_check"):
+            run_script('st_test2.py', '브랜드 중복체크', st.empty())
+        if st.button("아이템 중복체크", key="item_check"):
+            run_script('st_test2.py', '아이템 중복체크', st.empty())
+        if st.button("오늘의 아이템 찾기", key="today_item"):
+            run_script('st_test2.py', '오늘의 아이템 찾기', st.empty())
     
     # SNS 분석 섹션
     with st.expander("👥SNS 분석"):
-        st.button("팔로잉 추출", key="following_extract")
-        st.button("인플루언서 분석", key="influencer_analysis")
-        st.button("비전 분석", key="vision_analysis")
-        st.button("등급 분류", key="grade_classification")
+        if st.button("팔로잉 추출", key="following_extract"):
+            run_script('2-1_following_extract.py', '팔로잉 추출', st.empty())
+        if st.button("인플루언서 분석", key="influencer_analysis"):
+            run_script('st_test3.py', '인플루언서 분석', st.empty())
+        if st.button("비전 분석", key="vision_analysis"):
+            run_script('st_test3.py', '비전 분석', st.empty())
+        if st.button("등급 분류", key="grade_classification"):
+            run_script('st_test3.py', '등급 분류', st.empty())
     
     # DM 관리 섹션
     with st.expander("💌DM 관리"):
-        st.button("DM팔로우시트 열기", key="dm_sheet")
-        st.button("DM보내기", key="send_dm")
-        st.button("팔로우하기", key="follow")
+        if st.button("DM팔로우시트 열기", key="dm_sheet"):
+            run_script('st_test2.py', 'DM팔로우시트 열기', st.empty())
+        if st.button("DM보내기", key="send_dm"):
+            run_script('st_test2.py', 'DM보내기', st.empty())
+        if st.button("팔로우하기", key="follow"):
+            run_script('st_test2.py', '팔로우하기', st.empty())
 
 # MongoDB 연결 설정
 uri = "mongodb+srv://coq3820:JmbIOcaEOrvkpQo1@cluster0.qj1ty.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"

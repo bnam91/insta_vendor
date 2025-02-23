@@ -10,7 +10,7 @@ def open_streamlit_gui():
     )
 
     # 웹뷰 창 생성 (초기 크기 설정)
-    webview.create_window('Streamlit GUI', 'http://localhost:8501', width=1400, height=800)
+    webview.create_window('Streamlit GUI', 'http://localhost:8536/', width=1400, height=800)
 
     # 웹뷰 시작
     webview.start()
