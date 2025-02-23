@@ -515,9 +515,11 @@ def run_crawler():
             final_post_count = collection.count_documents({})
             posts_added = final_post_count - initial_post_count
             
-            # 세션 종료 로그 (수집된 게시물 수와 현재 총 게시물 수 포함)
+            # 세션 종료 로그
             log_session_status("크롤링 세션 종료", posts_added, final_post_count)
             
+            # 드라이버 종료
+            driver.quit()
             print("\n10회의 크롤링이 완료되었습니다.")
             
             rest_time = random.uniform(300, 600)
@@ -525,11 +527,13 @@ def run_crawler():
             time.sleep(rest_time)
             
         except KeyboardInterrupt:
+            driver.quit()
             total_posts = collection.count_documents({})
             log_session_status("사용자에 의한 크롤링 중단", total_posts=total_posts)
             print("\n사용자가 크롤링을 중단했습니다.")
             break
         except Exception as e:
+            driver.quit()
             total_posts = collection.count_documents({})
             log_session_status(f"오류 발생: {str(e)}", total_posts=total_posts)
             print(f"\n크롤링 중 오류 발생: {str(e)}")
@@ -537,7 +541,4 @@ def run_crawler():
             time.sleep(300)
 
 # 크롤러 실행
-try:
-    run_crawler()
-finally:
-    driver.quit()
+run_crawler()
