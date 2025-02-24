@@ -29,7 +29,8 @@ for item in data:
     
     # 새로운 필드 추가
     item["09_item_category"] = ""
-    
+    item["09_item_category_2"] = ""
+
     # 기존 필드명 변경
     for old_key, new_key in field_mapping.items():
         if old_key in item:

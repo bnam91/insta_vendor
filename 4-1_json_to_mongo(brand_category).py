@@ -17,7 +17,7 @@ try:
     #  collection = db['02_test_influencer_data']
    
     # JSON 파일 읽기
-    with open('brand_category.json', 'r', encoding='utf-8') as file:
+    with open('transformed_brands.json', 'r', encoding='utf-8') as file:
     # with open('2-2_influencer_processing_data.json', 'r', encoding='utf-8') as file:
         data = json.load(file)
 
@@ -27,7 +27,7 @@ try:
         for doc in data:
             try:
                 collection.update_one(
-                    {'username': doc['username']},
+                    {'name': doc['name']},
                     {'$set': doc},
                     upsert=True
                 )

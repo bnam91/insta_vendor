@@ -194,7 +194,7 @@ try:
     
     # post_url에 Unique Index 생성
     collection.create_index("post_url", unique=True)
-    print("Unique Index가 생성되었습니다.")
+    print("post_url에 Unique Index가 생성되었습니다.")
 
     # TTL 인덱스 생성 (자동 삭제 설정)
     # TTL 기간 변경 시 아래 값 수정:
@@ -223,6 +223,7 @@ def update_mongodb_data(values, current_date):
             "09_brand": "",
             "09_item": "",
             "09_item_category": "",
+            "09_item_category_2": "",
             "open_date": "",
             "end_date": "",
             "processed": False

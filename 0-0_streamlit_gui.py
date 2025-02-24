@@ -3,6 +3,10 @@ from pymongo import MongoClient
 from pymongo.server_api import ServerApi
 import pandas as pd
 import subprocess
+import webbrowser
+from google.oauth2.credentials import Credentials
+from googleapiclient.discovery import build
+from auth import get_credentials
 
 # 페이지 레이아웃을 wide 모드로 설정하고 사이드바를 초기에 닫힌 상태로 설정
 st.set_page_config(
@@ -192,7 +196,14 @@ with st.sidebar:
     # DM 관리 섹션
     with st.expander("💌DM 관리"):
         if st.button("DM팔로우시트 열기", key="dm_sheet"):
-            run_script('st_test2.py', 'DM팔로우시트 열기', st.empty())
+            try:
+                sheet_id = '1W5Xz4uaqSPysGLk28w6ybFHkGAPcz19_1BHdOih0Hoc'  # DM 팔로우시트의 ID
+                sheet_url = f'https://docs.google.com/spreadsheets/d/{sheet_id}'
+                webbrowser.open(sheet_url)
+                st.toast('DM 팔로우시트가 새 탭에서 열렸습니다.', icon='✅')
+            except Exception as e:
+                st.error(f'스프레드시트를 여는 중 오류가 발생했습니다: {str(e)}')
+                st.toast('스프레드시트 열기 실패', icon='❌')
         if st.button("DM보내기", key="send_dm"):
             run_script('st_test2.py', 'DM보내기', st.empty())
         if st.button("팔로우하기", key="follow"):
@@ -200,8 +211,8 @@ with st.sidebar:
             
     # 시트연동 섹션 추가
     with st.expander("📑시트연동"):
-        if st.button("시트 업데이트", key="load_sheet"):
-            run_script('st_test2.py', '시트 업데이트', st.empty())
+        if st.button("시트 연동", key="load_sheet"):
+            run_script('st_test2.py', '시트 연동', st.empty())
         if st.button("시트 보류", key="update_sheet"):
             run_script('st_test2.py', '시트 보류', st.empty())
         if st.button("시트 내보내기", key="export_sheet"):

@@ -18,19 +18,18 @@ try:
    
     # 기존 인덱스 삭제
     try:
-        if 'username_1' in collection.index_information():
-            collection.drop_index('username_1')
-            print("기존 username 인덱스 삭제 완료!")
-        else:
-            print("삭제할 username 인덱스가 없습니다.")
+        collection.drop_indexes()
+        print("모든 인덱스 삭제 완료!")
     except Exception as e:
         print(f"인덱스 삭제 중 오류 발생: {e}")
         pass
 
-    # author 필드에 유니크 인덱스 생성
+    # post_url에 유니크 인덱스 생성, author에는 일반 인덱스 생성
     try:
-        collection.create_index('author', unique=True)
-        print("author 필드에 유니크 인덱스 생성 완료!")
+        collection.create_index('post_url', unique=True)
+        collection.create_index('author')  # author는 일반 인덱스
+        print("post_url 필드에 유니크 인덱스 생성 완료!")
+        print("author 필드에 일반 인덱스 생성 완료!")
     except Exception as e:
         print(f"인덱스 생성 중 오류 발생: {e}")
         pass
@@ -42,17 +41,38 @@ try:
 
     # 데이터가 리스트인 경우 insert_many 사용, 단일 객체인 경우 insert_one 사용
     if isinstance(data, list):
-        # 중복 문서 처리를 위해 update_many 사용
+        success_count = 0
+        failed_documents = []
+        
         for doc in data:
             try:
-                collection.update_one(
-                    {'author': doc['author']},
+                result = collection.update_one(
+                    {'post_url': doc['post_url']},  # author 대신 post_url로 변경
                     {'$set': doc},
                     upsert=True
                 )
+                if result.modified_count > 0 or result.upserted_id:
+                    success_count += 1
             except Exception as e:
+                failed_documents.append({
+                    'document': doc,
+                    'error': str(e)
+                })
                 print(f"문서 업데이트 중 오류 발생: {e}")
-        print(f"데이터 업데이트/삽입 완료! 데이터베이스: {db.name}, 컬렉션: {collection.name}")
+        
+        # 실제 MongoDB의 문서 수 확인
+        actual_count = collection.count_documents({})
+        print(f"\n처리 완료!")
+        print(f"입력된 데이터 수: {len(data)}")
+        print(f"성공적으로 처리된 작업: {success_count}")
+        print(f"MongoDB의 실제 문서 수: {actual_count}")
+        print(f"실패: {len(failed_documents)}/{len(data)} 문서")
+        
+        # 실패한 문서 로그 저장
+        if failed_documents:
+            with open('failed_documents.json', 'w', encoding='utf-8') as f:
+                json.dump(failed_documents, f, ensure_ascii=False, indent=2)
+            print("실패한 문서들이 'failed_documents.json'에 저장되었습니다.")
     else:
         result = collection.insert_one(data)
         print(f"데이터 삽입 성공! 문서 ID: {result.inserted_id} 데이터베이스: {db.name}, 컬렉션: {collection.name}")
