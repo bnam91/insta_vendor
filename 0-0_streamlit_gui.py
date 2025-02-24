@@ -197,6 +197,15 @@ with st.sidebar:
             run_script('st_test2.py', 'DM보내기', st.empty())
         if st.button("팔로우하기", key="follow"):
             run_script('st_test2.py', '팔로우하기', st.empty())
+            
+    # 시트연동 섹션 추가
+    with st.expander("📑시트연동"):
+        if st.button("시트 업데이트", key="load_sheet"):
+            run_script('st_test2.py', '시트 업데이트', st.empty())
+        if st.button("시트 보류", key="update_sheet"):
+            run_script('st_test2.py', '시트 보류', st.empty())
+        if st.button("시트 내보내기", key="export_sheet"):
+            run_script('st_test2.py', '시트 내보내기', st.empty())
 
 # MongoDB 연결 설정
 uri = "mongodb+srv://coq3820:JmbIOcaEOrvkpQo1@cluster0.qj1ty.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
