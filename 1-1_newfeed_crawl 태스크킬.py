@@ -190,7 +190,7 @@ try:
     
     # 데이터베이스와 컬렉션 선택
     db = client['insta09_database']
-    collection = db['01_main_newfeed_crawl_data']
+    collection = db['01_test_test_newfeed_crawl_data']
     
     # post_url에 Unique Index 생성
     collection.create_index("post_url", unique=True)
@@ -282,7 +282,7 @@ def load_processed_posts():
     
     return processed_posts
 
-def main_crawling():
+def main_crawling(driver):
     try:
         # 프로필 URL로 이동
         profile_url = "https://www.instagram.com/"
@@ -303,7 +303,6 @@ def main_crawling():
         last_height = driver.execute_script("return document.body.scrollHeight")
         processed_posts = set()  # 이미 처리한 게시물 추적
         old_post_count = 0  # 7일 이상 된 게시물 카운트
-        old_post_urls = set()  # 5일 이상 된 게시물의 URL을 저장하는 집합 추가
 
         print("\n피드 크롤링을 시작합니다...")
 
@@ -345,17 +344,12 @@ def main_crawling():
                         time_difference = current_time - post_datetime
                         
                         days_threshold = 5  # 날짜 기준을 변수로 설정(날짜변경,수정)
-                        if time_difference.days >= days_threshold and post_link not in old_post_urls:
-                            old_post_urls.add(post_link)  # 5일 이상 된 게시물 URL 저장
+                        if time_difference.days >= days_threshold:
                             old_post_count += 1
                             print(f"\n{days_threshold}일 이상 된 게시물 발견! (현재까지 {old_post_count}개 발견)")
                             
-                            # 로그 파일에 기록 추가
-                            log_old_post(post_link, post_time, old_post_count)
-                            
                             if old_post_count >= 10:  # 5개에서 10개로 변경
                                 print(f"\n{days_threshold}일 이상 된 게시물이 10개 이상 발견되어 크롤링을 종료합니다.")
-                                log_session_status(f"5일 이상 된 게시물 10개 발견으로 크롤링 종료", total_posts=collection.count_documents({}))
                                 raise StopIteration  # 크롤링 종료를 위해 예외 발생
                         
                         # 사용자명 찾기 (현재 게시물 내에서 검색)
@@ -496,41 +490,78 @@ def log_session_status(status, posts_count=None, total_posts=None):
     with open(log_file, 'a', encoding='utf-8') as f:
         f.write(log_message + "\n")
 
-def log_old_post(post_url, post_time, count):
-    """5일 이상 된 게시물 발견 시 로그 파일에 기록"""
-    log_file = os.path.join(os.path.dirname(__file__), "newfeed_crawl_sessions.txt")
-    kst = timezone(timedelta(hours=9))
-    timestamp = datetime.now(kst).strftime('%Y-%m-%d %H:%M:%S')
-    
-    # 게시물 작성 시간을 KST로 변환
-    post_datetime = datetime.fromisoformat(post_time.replace('Z', '+00:00'))
-    post_datetime_kst = post_datetime.astimezone(kst)
-    post_time_kst = post_datetime_kst.strftime('%Y-%m-%d %H:%M:%S')
-    
-    log_message = f"[{timestamp}] 5일 이상 된 게시물 발견 ({count}번째) - URL: {post_url}, 작성시간: {post_time_kst}"
-    
-    with open(log_file, 'a', encoding='utf-8') as f:
-        f.write(log_message + "\n")
-
 def run_crawler():
-    session_count = 1  # 세션 카운터 추가
     while True:
+        driver = None  # 변수를 미리 초기화
         try:
+            # 기존 크롬 프로세스 강제 종료 (Windows 환경)
+            try:
+                import subprocess
+                subprocess.run(['taskkill', '/f', '/im', 'chrome.exe'], capture_output=True)
+                subprocess.run(['taskkill', '/f', '/im', 'chromedriver.exe'], capture_output=True)
+                print("기존 Chrome 프로세스를 종료했습니다.")
+                time.sleep(3)  # 프로세스가 완전히 종료될 때까지 대기
+            except Exception as e:
+                print(f"Chrome 프로세스 종료 중 오류 발생 (무시됨): {str(e)}")
+            
+            # 사용자 데이터 디렉토리 설정
+            user_data_dir = os.path.join(os.path.dirname(__file__), "user_data", "office_goyamedia_feed")
+            
+            # 캐시 정리 시도
+            try:
+                clear_chrome_data(user_data_dir)
+            except Exception as e:
+                print(f"캐시 정리 중 오류 발생 (무시됨): {str(e)}")
+            
+            # 새로운 드라이버 초기화
+            options = Options()
+            options.add_argument("--start-maximized")
+            options.add_experimental_option("detach", True)
+            options.add_argument("disable-blink-features=AutomationControlled")
+            options.add_experimental_option("excludeSwitches", ["enable-logging"])
+            options.add_argument(f"user-data-dir={user_data_dir}")
+            
+            # 추가 안정성 옵션
+            options.add_argument("--no-sandbox")
+            options.add_argument("--disable-dev-shm-usage")
+            options.add_argument("--disable-gpu")
+            options.add_argument("--disable-application-cache")
+            options.add_argument("--disable-cache")
+            
+            # 새 드라이버 생성 시도 (최대 3회)
+            for attempt in range(3):
+                try:
+                    driver = webdriver.Chrome(options=options)
+                    print("Chrome 드라이버가 성공적으로 초기화되었습니다.")
+                    break
+                except Exception as e:
+                    print(f"드라이버 초기화 {attempt+1}차 시도 실패: {str(e)}")
+                    if attempt < 2:  # 마지막 시도가 아니면 재시도
+                        print("10초 후 다시 시도합니다...")
+                        time.sleep(10)
+                        # 다시 프로세스 종료 시도
+                        try:
+                            subprocess.run(['taskkill', '/f', '/im', 'chrome.exe'], capture_output=True)
+                            subprocess.run(['taskkill', '/f', '/im', 'chromedriver.exe'], capture_output=True)
+                        except:
+                            pass
+                    else:
+                        raise  # 3번 모두 실패하면 예외 발생
+            
             # 세션 시작 로그 (현재 총 게시물 수 포함)
             total_posts = collection.count_documents({})
-            print(f"\n=== {session_count}번째 크롤링 세션 시작 ===")
-            log_session_status(f"{session_count}번째 크롤링 세션 시작", total_posts=total_posts)
+            log_session_status("새로운 크롤링 세션 시작", total_posts=total_posts)
             
             # MongoDB에서 초기 게시물 수 확인
             initial_post_count = collection.count_documents({})
             
-            for attempt in range(3):  # 10에서 3으로 변경
+            for attempt in range(3):  # 3회 크롤링
                 print(f"\n=== 크롤링 {attempt + 1}차 시도 시작 ===")
-                result = main_crawling()
+                result = main_crawling(driver)  # driver 인스턴스 전달
                 print(f"\n=== 크롤링 {attempt + 1}차 시도 완료 ===")
                 print(f"결과: {result}")
                 
-                if attempt < 2:  # 9에서 2로 변경 (3회 중 마지막 전까지)
+                if attempt < 2:  # 마지막 전까지만 대기
                     print("\n30초 후 다음 크롤링을 시작합니다...")
                     time.sleep(30)
                     driver.refresh()
@@ -541,42 +572,49 @@ def run_crawler():
             posts_added = final_post_count - initial_post_count
             
             # 세션 종료 로그
-            print(f"\n=== {session_count}번째 크롤링 세션 종료 ===")
-            print(f"이번 세션에서 {posts_added}개의 게시물이 추가되었습니다.")
-            print(f"현재 DB에 총 {final_post_count}개의 게시물이 있습니다.")
-            log_session_status(f"{session_count}번째 크롤링 세션 종료", posts_added, final_post_count)
+            log_session_status("크롤링 세션 종료", posts_added, final_post_count)
             
             # 드라이버 종료
-            driver.quit()
-            print("\n3회의 크롤링이 완료되었습니다.")  # 10회에서 3회로 변경
+            if driver:
+                driver.quit()
+            print("\n3회의 크롤링이 완료되었습니다.")
             
-            # 세션 카운터 증가
-            session_count += 1
+            # 크롬 프로세스 다시 종료
+            try:
+                subprocess.run(['taskkill', '/f', '/im', 'chrome.exe'], capture_output=True)
+                subprocess.run(['taskkill', '/f', '/im', 'chromedriver.exe'], capture_output=True)
+            except:
+                pass
             
             rest_time = random.uniform(300, 600)
             print(f"\n다음 크롤링 세션까지 {rest_time/60:.1f}분 대기합니다...")
             time.sleep(rest_time)
             
-            # 새 세션을 위한 드라이버 재생성
-            driver = webdriver.Chrome(options=options)
-            print(f"\n새 드라이버가 생성되었습니다. {session_count}번째 세션을 시작합니다...")
-            
         except KeyboardInterrupt:
-            driver.quit()
+            if driver:
+                driver.quit()
             total_posts = collection.count_documents({})
-            log_session_status(f"{session_count}번째 세션 - 사용자에 의한 크롤링 중단", total_posts=total_posts)
-            print(f"\n=== {session_count}번째 크롤링 세션이 사용자에 의해 중단되었습니다 ===")
+            log_session_status("사용자에 의한 크롤링 중단", total_posts=total_posts)
+            print("\n사용자가 크롤링을 중단했습니다.")
             break
         except Exception as e:
-            driver.quit()
+            if driver:
+                try:
+                    driver.quit()
+                except:
+                    pass
+            # 크롬 프로세스 강제 종료
+            try:
+                subprocess.run(['taskkill', '/f', '/im', 'chrome.exe'], capture_output=True)
+                subprocess.run(['taskkill', '/f', '/im', 'chromedriver.exe'], capture_output=True)
+            except:
+                pass
+            
             total_posts = collection.count_documents({})
-            log_session_status(f"{session_count}번째 세션 - 오류 발생: {str(e)}", total_posts=total_posts)
-            print(f"\n=== {session_count}번째 크롤링 세션 중 오류 발생: {str(e)} ===")
+            log_session_status(f"오류 발생: {str(e)}", total_posts=total_posts)
+            print(f"\n크롤링 중 오류 발생: {str(e)}")
             print("5분 후 다시 시도합니다...")
             time.sleep(300)
-            
-            # 새 드라이버 생성
-            driver = webdriver.Chrome(options=options)
 
 # 크롤러 실행
 run_crawler()

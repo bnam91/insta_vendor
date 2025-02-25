@@ -131,6 +131,8 @@ import os
 from dotenv import load_dotenv
 from pymongo import MongoClient
 from pymongo.server_api import ServerApi
+import google.generativeai as genai  # 제미나이 API 추가
+import re
 
 def get_mongodb_connection():
     uri = "mongodb+srv://coq3820:JmbIOcaEOrvkpQo1@cluster0.qj1ty.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
@@ -160,7 +162,6 @@ def update_influencer_data(item, collections):
     try:
         # 브랜드 카테고리 데이터 로드
         brands_collection = collections['brands']
-        brand_category_data = brands_collection.find_one()
         
         # 인플루언서 데이터 찾기
         influencers_collection = collections['influencers']
@@ -178,7 +179,7 @@ def update_influencer_data(item, collections):
             if brand_info:
                 return {
                     'name': brand_info['name'],
-                    'category': brand_info['category']
+                    'category': brand_info.get('category', '')  # get 메서드로 안전하게 가져오기
                 }
             
             # 브랜드가 없는 경우 새로 추가
@@ -227,6 +228,8 @@ def update_influencer_data(item, collections):
                 'products': [{
                     'item': item['09_item'],
                     'type': item['09_feed'],
+                    'category': item.get('09_item_category', ''),
+                    'category2': item.get('09_item_category_2', ''),  # 서브 카테고리 정보 추가
                     'mentioned_date': item['cr_at'],
                     'expected_date': item['open_date'],
                     'end_date': item['end_date'],
@@ -294,6 +297,144 @@ def update_influencer_data(item, collections):
         with open('influencer_update_errors.log', 'a', encoding='utf-8') as error_file:
             error_file.write(error_message)
         print(f"인플루언서 데이터 업데이트 중 오류 발생: {str(e)}")
+
+def analyze_product_category(product_name):
+    """
+    제미나이 API를 사용하여 상품명을 분석하고 적합한 카테고리를 반환합니다.
+    
+    Args:
+        product_name (str): 분석할 상품명
+        
+    Returns:
+        tuple: (주 카테고리, 서브 카테고리)
+    """
+    try:
+        # 제미나이 API 키 설정
+        genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
+        
+        # 카테고리 정의
+        categories = """
+        🍽 주방용품 & 식기
+        도마, 조리도구, 식기세트 - 도마, 칼, 조리도구, 그릇, 접시, 컵, 수저, 식기세트
+        냄비 & 프라이팬 - 냄비, 프라이팬, 웍, 찜기, 압력솥, 뚝배기
+        주방가전 - 에어프라이어, 오븐, 토스터, 블렌더, 믹서기, 전기포트, 커피머신
+        밀폐/보관 용기 - 밀폐용기, 보관용기, 유리용기, 스테인리스 용기, 진공용기
+
+        🛋 생활용품 & 가전
+        청소기 & 세척기 - 청소기, 로봇청소기, 핸디청소기, 스팀청소기, 세척기
+        세탁/욕실용품 - 세제, 섬유유연제, 세탁세제, 주방세제, 고무장갑, 욕실용품, 수건
+        조명 & 가구 - 조명, 스탠드, 책상, 의자, 침대, 소파, 테이블, 수납장
+        침구 & 커튼 - 이불, 베개, 침대패드, 매트리스, 커튼, 블라인드, 러그, 카페트
+
+        🥦 식품 & 건강식품
+        건강음료 & 차 - 차, 건강음료, 콤부차, 식혜, 수제청, 과일청, 식초
+        간편식 & 조미료 - 간편식, 즉석식품, 소스, 조미료, 양념, 곰탕, 국, 찌개
+        스낵 & 간식 - 과자, 쿠키, 초콜릿, 젤리, 견과류, 그래놀라, 시리얼
+        축산 & 수산물 - 육류, 해산물, 생선, 계란, 우유, 치즈, 요거트
+        과일 & 신선식품 - 과일, 채소, 샐러드, 나물, 버섯
+        건강보조제 - 비타민, 영양제, 프로바이오틱스, 콜라겐, 단백질 보충제
+
+        🧴 뷰티 & 헬스
+        헤어 & 바디 - 샴푸, 트리트먼트, 바디워시, 바디로션, 핸드크림, 바디스크럽
+        스킨케어 & 화장품 - 스킨, 로션, 에센스, 크림, 마스크팩, 선크림, 메이크업
+        구강케어 - 치약, 칫솔, 구강세정제, 치실, 구강스프레이
+        헬스 & 피트니스 - 운동기구, 요가매트, 덤벨, 보조제, 프로틴, 다이어트식품
+
+        👶 유아 & 교육
+        유아 가구 & 침구 - 유아침대, 유아책상, 유아의자, 유아이불, 유아베개
+        교육 & 완구 - 책, 교구, 장난감, 퍼즐, 블록, 보드게임, 인형
+
+        👗 의류 & 잡화
+        의류 & 신발 - 옷, 의류, 패딩, 코트, 자켓, 티셔츠, 바지, 신발, 슬리퍼
+        가방 & 액세서리 - 가방, 백팩, 지갑, 벨트, 모자, 스카프, 목걸이, 귀걸이
+
+        🚗 기타 & 전자제품
+        전자기기 - TV, 스피커, 이어폰, 헤드폰, 충전기, 노트북, 태블릿
+        기타 - 분류가 안된 것
+        """
+        
+        # 제미나이 모델 생성 및 생성 구성 설정
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        
+        # 생성 구성 설정
+        generation_config = {
+            "temperature": 0.0,  # 완전히 결정적인 응답 생성 (항상 동일한 결과)
+            "top_p": 0.95,       # 누적 확률 기준으로 토큰 선택 범위 제한 (0.95 = 상위 95% 확률 내 토큰만 고려)
+            "top_k": 40,         # 각 단계에서 고려할 최상위 토큰 수 (다양성과 품질의 균형)
+            "max_output_tokens": 200,  # 생성할 최대 토큰 수 제한 (응답 길이 제한)
+        }
+        
+        # 프롬프트 작성
+        prompt = f"""
+        다음 상품명을 분석하여 가장 적합한 카테고리와 서브카테고리를 선택해주세요:
+        
+        상품명: {product_name}
+        
+        다음 카테고리 목록에서만 선택하세요:
+        {categories}
+        
+        분류 규칙:
+        1. 상품의 주요 기능과 용도를 기준으로 분류하세요.
+        2. 여러 카테고리에 걸쳐있는 상품은 주된 용도를 기준으로 분류하세요.
+        3. 브랜드명은 무시하고 상품 자체의 특성으로만 판단하세요.
+        4. 상품명만으로 분류가 어렵거나 카테고리 목록에 명확히 포함되지 않는 경우 '기타' 카테고리를 사용하세요.
+        5. 식품 관련 상품은 최대한 구체적인 식품 서브카테고리로 분류하세요.
+        
+        주 카테고리는 이모지가 포함된 대분류(예: 🍽 주방용품 & 식기)를 선택하고,
+        서브 카테고리는 해당 주 카테고리 아래의 소분류(예: 도마, 조리도구, 식기세트)를 선택하세요.
+        
+        예시:
+        1. "트리쳐도마+진공밧드세트" → 🍽 주방용품 & 식기 / 도마, 조리도구, 식기세트
+        2. "프리미엄 니트릴 고무장갑" → 🛋 생활용품 & 가전 / 세탁/욕실용품
+        3. "포빙이불 (고밀도 모달/면 차렵이불, 침대패드, 베개커버)" → 🛋 생활용품 & 가전 / 침구 & 커튼
+        4. "세탁세제, 섬유유연제, 주방세제" → 🛋 생활용품 & 가전 / 세탁/욕실용품
+        5. "화장품 3종세트" → 🧴 뷰티 & 헬스 / 스킨케어 & 화장품
+        6. "클린톡 과일야채 주스" → 🥦 식품 & 건강식품 / 건강음료 & 차
+        7. "유기농 견과류 선물세트" → 🥦 식품 & 건강식품 / 스낵 & 간식
+        8. "한우 선물세트" → 🥦 식품 & 건강식품 / 축산 & 수산물
+        9. "멀티비타민" → 🥦 식품 & 건강식품 / 건강보조제
+        10. "요가매트와 덤벨 세트" → 🧴 뷰티 & 헬스 / 헬스 & 피트니스
+        11. "다용도 선물세트(여러 카테고리 상품 혼합)" → 🚗 기타 & 전자제품 / 기타
+        12. "유기농 엑스트라 버진 올리브 오일" → 🥦 식품 & 건강식품 / 간편식 & 조미료
+        
+        응답 형식:
+        {{
+          "main_category": "이모지와 함께 주 카테고리명",
+          "sub_category": "서브 카테고리명"
+        }}
+        
+        JSON 형식으로만 응답해주세요. 예시 응답:
+        {{
+          "main_category": "🍽주방용품&식기",
+          "sub_category": "도마,조리도구,식기세트"
+        }}
+        """
+        
+        # 제미나이 API 호출 (생성 구성 적용)
+        response = model.generate_content(
+            prompt,
+            generation_config=generation_config
+        )
+        
+        # 응답 파싱
+        try:
+            result = json.loads(response.text)
+            return result["main_category"], result["sub_category"]
+        except json.JSONDecodeError:
+            # JSON 파싱 실패 시 텍스트에서 정보 추출 시도
+            text = response.text
+            main_match = re.search(r'"main_category":\s*"([^"]+)"', text)
+            sub_match = re.search(r'"sub_category":\s*"([^"]+)"', text)
+            
+            if main_match and sub_match:
+                return main_match.group(1), sub_match.group(1)
+            else:
+                print("응답에서 카테고리 정보를 추출할 수 없습니다.")
+                return "", ""
+    
+    except Exception as e:
+        print(f"제미나이 API 호출 중 오류 발생: {str(e)}")
+        return "", ""  # 오류 발생 시 빈 문자열 반환
 
 def analyze_instagram_feed():
     try:
@@ -476,8 +617,21 @@ def analyze_instagram_feed():
                         'open_date': start_date,
                         'end_date': end_date,
                         '09_item_category': '',
+                        '09_item_category_2': '',
                         'processed': True
                     }
+                    
+                    # 제미나이 API를 사용하여 카테고리 분석
+                    if result['product_name']:
+                        try:
+                            item_category, item_category2 = analyze_product_category(result['product_name'])
+                            update_data['09_item_category'] = item_category
+                            update_data['09_item_category_2'] = item_category2
+                            
+                            # 카테고리 분석 결과 출력
+                            print(f"{i}번 게시글: 카테고리 분석 결과 - 주 카테고리: {item_category}, 서브 카테고리: {item_category2}")
+                        except Exception as e:
+                            print(f"카테고리 분석 중 오류 발생: {str(e)}")
                     
                     # MongoDB 업데이트
                     feeds_collection.update_one(
@@ -497,6 +651,7 @@ def analyze_instagram_feed():
                         'open_date': '',
                         'end_date': '',
                         '09_item_category': '',
+                        '09_item_category_2': '',
                         'processed': True
                     }
                     
