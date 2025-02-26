@@ -165,9 +165,9 @@ options.add_experimental_option("excludeSwitches", ["enable-logging"])
 
 # 절대경로에서 상대경로로 변경
 #-- 성남집
-# user_data_dir = os.path.join(os.path.dirname(__file__), "user_data", "home_goyamedia_feed
+user_data_dir = os.path.join(os.path.dirname(__file__), "user_data", "home_goyamedia_feed")
 #-- 오피스
-user_data_dir = os.path.join(os.path.dirname(__file__), "user_data", "office_goyamedia_feed") 
+# user_data_dir = os.path.join(os.path.dirname(__file__), "user_data", "office_goyamedia_feed") 
 options.add_argument(f"user-data-dir={user_data_dir}")
 
 # 캐시와 임시 파일 정리 (로그인 정보 유지)
@@ -353,9 +353,9 @@ def main_crawling():
                             # 로그 파일에 기록 추가
                             log_old_post(post_link, post_time, old_post_count)
                             
-                            if old_post_count >= 10:  # 5개에서 10개로 변경
-                                print(f"\n{days_threshold}일 이상 된 게시물이 10개 이상 발견되어 크롤링을 종료합니다.")
-                                log_session_status(f"5일 이상 된 게시물 10개 발견으로 크롤링 종료", total_posts=collection.count_documents({}))
+                            if old_post_count >= 5:  # 10개에서 5개로 변경
+                                print(f"\n{days_threshold}일 이상 된 게시물이 5개 이상 발견되어 크롤링을 종료합니다.")
+                                log_session_status(f"5일 이상 된 게시물 5개 발견으로 크롤링 종료", total_posts=collection.count_documents({}))
                                 raise StopIteration  # 크롤링 종료를 위해 예외 발생
                         
                         # 사용자명 찾기 (현재 게시물 내에서 검색)
@@ -513,6 +513,7 @@ def log_old_post(post_url, post_time, count):
         f.write(log_message + "\n")
 
 def run_crawler():
+    global driver  # driver를 전역 변수로 선언
     session_count = 1  # 세션 카운터 추가
     while True:
         try:
@@ -524,13 +525,13 @@ def run_crawler():
             # MongoDB에서 초기 게시물 수 확인
             initial_post_count = collection.count_documents({})
             
-            for attempt in range(3):  # 10에서 3으로 변경
+            for attempt in range(1):  # 3에서 1로 변경
                 print(f"\n=== 크롤링 {attempt + 1}차 시도 시작 ===")
                 result = main_crawling()
                 print(f"\n=== 크롤링 {attempt + 1}차 시도 완료 ===")
                 print(f"결과: {result}")
                 
-                if attempt < 2:  # 9에서 2로 변경 (3회 중 마지막 전까지)
+                if attempt < 0:  # 2에서 0으로 변경 (1회만 실행하므로 이 조건은 실행되지 않음)
                     print("\n30초 후 다음 크롤링을 시작합니다...")
                     time.sleep(30)
                     driver.refresh()
@@ -548,7 +549,7 @@ def run_crawler():
             
             # 드라이버 종료
             driver.quit()
-            print("\n3회의 크롤링이 완료되었습니다.")  # 10회에서 3회로 변경
+            print("\n1회의 크롤링이 완료되었습니다.")  # 3회에서 1회로 변경
             
             # 세션 카운터 증가
             session_count += 1
@@ -562,13 +563,19 @@ def run_crawler():
             print(f"\n새 드라이버가 생성되었습니다. {session_count}번째 세션을 시작합니다...")
             
         except KeyboardInterrupt:
-            driver.quit()
+            try:
+                driver.quit()
+            except:
+                pass  # 드라이버가 이미 종료되었거나 없는 경우 무시
             total_posts = collection.count_documents({})
             log_session_status(f"{session_count}번째 세션 - 사용자에 의한 크롤링 중단", total_posts=total_posts)
             print(f"\n=== {session_count}번째 크롤링 세션이 사용자에 의해 중단되었습니다 ===")
             break
         except Exception as e:
-            driver.quit()
+            try:
+                driver.quit()
+            except:
+                pass  # 드라이버가 이미 종료되었거나 없는 경우 무시
             total_posts = collection.count_documents({})
             log_session_status(f"{session_count}번째 세션 - 오류 발생: {str(e)}", total_posts=total_posts)
             print(f"\n=== {session_count}번째 크롤링 세션 중 오류 발생: {str(e)} ===")
