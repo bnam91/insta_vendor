@@ -344,18 +344,20 @@ def main_crawling():
                         current_time = datetime.now(timezone.utc)
                         time_difference = current_time - post_datetime
                         
-                        days_threshold = 5  # 날짜 기준을 변수로 설정(날짜변경,수정)
+                        days_threshold = 10  # 날짜 *기준을 변수로 설정(날짜변경,수정)
+                        old_post_threshold = 5  # 오래된 게시물 발견 기준 수량 (변경 가능)
+                        
                         if time_difference.days >= days_threshold and post_link not in old_post_urls:
                             old_post_urls.add(post_link)  # 5일 이상 된 게시물 URL 저장
                             old_post_count += 1
                             print(f"\n{days_threshold}일 이상 된 게시물 발견! (현재까지 {old_post_count}개 발견)")
                             
                             # 로그 파일에 기록 추가
-                            log_old_post(post_link, post_time, old_post_count)
+                            log_old_post(post_link, post_time, old_post_count, days_threshold)
                             
-                            if old_post_count >= 5:  # 10개에서 5개로 변경
-                                print(f"\n{days_threshold}일 이상 된 게시물이 5개 이상 발견되어 크롤링을 종료합니다.")
-                                log_session_status(f"5일 이상 된 게시물 5개 발견으로 크롤링 종료", total_posts=collection.count_documents({}))
+                            if old_post_count >= old_post_threshold:
+                                print(f"\n{days_threshold}일 이상 된 게시물이 {old_post_threshold}개 이상 발견되어 크롤링을 종료합니다.")
+                                log_session_status(f"{days_threshold}일 이상 된 게시물 {old_post_threshold}개 발견으로 크롤링 종료", total_posts=collection.count_documents({}))
                                 raise StopIteration  # 크롤링 종료를 위해 예외 발생
                         
                         # 사용자명 찾기 (현재 게시물 내에서 검색)
@@ -496,8 +498,8 @@ def log_session_status(status, posts_count=None, total_posts=None):
     with open(log_file, 'a', encoding='utf-8') as f:
         f.write(log_message + "\n")
 
-def log_old_post(post_url, post_time, count):
-    """5일 이상 된 게시물 발견 시 로그 파일에 기록"""
+def log_old_post(post_url, post_time, count, days_threshold):
+    """오래된 게시물 발견 시 로그 파일에 기록"""
     log_file = os.path.join(os.path.dirname(__file__), "newfeed_crawl_sessions.txt")
     kst = timezone(timedelta(hours=9))
     timestamp = datetime.now(kst).strftime('%Y-%m-%d %H:%M:%S')
@@ -507,7 +509,7 @@ def log_old_post(post_url, post_time, count):
     post_datetime_kst = post_datetime.astimezone(kst)
     post_time_kst = post_datetime_kst.strftime('%Y-%m-%d %H:%M:%S')
     
-    log_message = f"[{timestamp}] 5일 이상 된 게시물 발견 ({count}번째) - URL: {post_url}, 작성시간: {post_time_kst}"
+    log_message = f"[{timestamp}] {days_threshold}일 이상 된 게시물 발견 ({count}번째) - URL: {post_url}, 작성시간: {post_time_kst}"
     
     with open(log_file, 'a', encoding='utf-8') as f:
         f.write(log_message + "\n")
@@ -556,7 +558,21 @@ def run_crawler():
             
             rest_time = random.uniform(300, 600)
             print(f"\n다음 크롤링 세션까지 {rest_time/60:.1f}분 대기합니다...")
-            time.sleep(rest_time)
+            
+            # 카운트다운 추가
+            start_time = time.time()
+            while True:
+                elapsed_time = time.time() - start_time
+                remaining_time = rest_time - elapsed_time
+                
+                if remaining_time <= 0:
+                    print("\n휴식 완료! 다음 크롤링 세션을 시작합니다...")
+                    break
+                
+                minutes = int(remaining_time // 60)
+                seconds = int(remaining_time % 60)
+                print(f"\r남은 휴식 시간: {minutes}분 {seconds}초", end='', flush=True)
+                time.sleep(1)  # 1초마다 업데이트
             
             # 새 세션을 위한 드라이버 재생성
             driver = webdriver.Chrome(options=options)
