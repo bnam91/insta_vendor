@@ -118,7 +118,12 @@ options.add_argument("disable-blink-features=AutomationControlled")
 options.add_experimental_option("excludeSwitches", ["enable-logging"])
 
 # 절대경로에서 상대경로로 변경
-user_data_dir = os.path.join(os.path.dirname(__file__), "user_data", "office_goyamedia_feed")
+# 0_insta_login.txt 파일에서 프로필 정보 읽기
+login_file_path = os.path.join(os.path.dirname(__file__), "0_insta_login.txt")
+with open(login_file_path, 'r', encoding='utf-8') as f:
+    profile_name = f.read().strip()
+
+user_data_dir = os.path.join(os.path.dirname(__file__), "user_data", profile_name)
 options.add_argument(f"user-data-dir={user_data_dir}")
 
 # 캐시와 임시 파일 정리 (로그인 정보 유지)

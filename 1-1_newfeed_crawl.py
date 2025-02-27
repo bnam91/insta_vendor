@@ -163,14 +163,21 @@ options.add_experimental_option("detach", True)
 options.add_argument("disable-blink-features=AutomationControlled")
 options.add_experimental_option("excludeSwitches", ["enable-logging"])
 
+# #-- 성남집
+# "home_goyamedia_feed"
+# #-- 오피스(윈도우)
+# "office_goyamedia_feed"
+# #-- 오피스(맥)
+# "office_mac_goyamedia_feed"
+
 # 절대경로에서 상대경로로 변경
-#-- 성남집
-user_data_dir = os.path.join(os.path.dirname(__file__), "user_data", "home_goyamedia_feed")
-#-- 오피스
-# user_data_dir = os.path.join(os.path.dirname(__file__), "user_data", "office_goyamedia_feed")
-#-- 오피스(맥)
-# user_data_dir = os.path.join(os.path.dirname(__file__), "user_data", "office_mac_goyamedia_feed") 
-options.add_argument(f"user-data-dir={user_data_dir}")
+# 0_insta_login.txt 파일에서 프로필 정보 읽기
+login_file_path = os.path.join(os.path.dirname(__file__), "0_insta_login.txt")
+with open(login_file_path, 'r', encoding='utf-8') as f:
+    profile_name = f.read().strip()
+
+user_data_dir = os.path.join(os.path.dirname(__file__), "user_data", profile_name)
+
 options.add_argument(f"user-data-dir={user_data_dir}")
 
 # 캐시와 임시 파일 정리 (로그인 정보 유지)
