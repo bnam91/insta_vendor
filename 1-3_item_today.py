@@ -1,15 +1,15 @@
 """
 1-3_item_today.py - 인플루언서 공구 아이템 데이터 처리 및 업데이트
 
-입력 파일:
-1. 1-1_newfeed_crawl_data.json: 크롤링된 새로운 피드 데이터
+입력 데이터:
+1. MongoDB '01_test_newfeed_crawl_data' 컬렉션: 크롤링된 새로운 피드 데이터
 2. brand_category.json: 브랜드 정보 및 카테고리 데이터
-3. 2-2_influencer_processing_data.json: 인플루언서 정보 데이터
-4. 1-3_item_today_data.json: 기존에 처리된 아이템 데이터
+3. MongoDB '02_test_influencer_data' 컬렉션: 인플루언서 정보 데이터
+4. MongoDB '04_test_item_today_data' 컬렉션: 기존에 처리된 아이템 데이터
 
-출력 파일:
-1. 1-3_item_today_data.json: 업데이트된 최종 아이템 데이터
-2. 1-1_newfeed_crawl_data.json: 처리 상태가 업데이트된 피드 데이터
+출력 데이터:
+1. MongoDB '04_test_item_today_data' 컬렉션: 업데이트된 최종 아이템 데이터
+2. MongoDB '01_test_newfeed_crawl_data' 컬렉션: 처리 상태가 업데이트된 피드 데이터
 
 주요 기능:
 - 새로운 피드 데이터에서 미처리된 공구 아이템 추출
@@ -17,6 +17,7 @@
 - 인플루언서 정보 연동
 - 중복 데이터 필터링 (작성자, 브랜드, 날짜 기준)
 - NEW 표시 업데이트 (2일 이내 데이터)
+- MongoDB 데이터베이스 연동 및 데이터 관리
 """
 
 from datetime import datetime
@@ -128,8 +129,8 @@ def update_data():
                     'NEW': 'NEW',
                     'crawl_date': item['crawl_date'],
                     'brand_level': brand_info['level'],
-                    'brand': brand_info['name'],
                     'brand_category': brand_info['category'],
+                    'brand': brand_info['name'],
                     'item': item.get('09_item', ''),
                     'item_category': item.get('09_item_category', ''),
                     'author': item['author'],

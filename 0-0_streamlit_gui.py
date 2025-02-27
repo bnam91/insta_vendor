@@ -1,3 +1,5 @@
+# streamlit run 0-0_streamlit_gui.py
+
 import streamlit as st
 from pymongo import MongoClient
 from pymongo.server_api import ServerApi
@@ -111,7 +113,7 @@ def run_script(script_name, button_name, output_container):
         st.toast(f'{button_name} 실행 중 오류가 발생했습니다.', icon='❌')
         st.stop()
 
-# 팔로잉 추출을 위한 대화상자 함수 정의
+# 플로잉 추출을 위한 대화상자 함수 정의
 @st.dialog("팔로잉 추출")
 def following_extract_dialog():
     st.write("인스타그램 프로필 URL 또는 사용자명을 입력하세요:")
@@ -217,6 +219,33 @@ with st.sidebar:
             run_script('st_test2.py', '시트 보류', st.empty())
         if st.button("시트 내보내기", key="export_sheet"):
             run_script('st_test2.py', '시트 내보내기', st.empty())
+
+    # 필터 섹션 추가 - 04_test_item_today_data가 선택되었을 때만 표시
+    if 'collection_select' in st.session_state and st.session_state.collection_select == '04_test_item_today_data':
+        st.divider()
+        st.subheader("필터 옵션")
+        
+        # 필터 옵션을 위한 컨테이너
+        filter_container = st.container()
+        
+        with filter_container:
+            # 필터링 레이블 없이 다중선택 위젯 표시
+            filter_options = st.multiselect(
+                "제외할 항목을 선택하세요 :",  # 레이블 제거
+                options=["옵션1", "옵션2", "옵션3", "옵션4", "옵션5"],
+                default=[],
+                key="filter_multiselect"
+            )
+            
+            # 필터 적용 버튼
+            apply_filter = st.button("필터 적용", key="apply_filter_button")
+            
+            # 필터 초기화 버튼
+            reset_filter = st.button("필터 초기화", key="reset_filter_button")
+            
+            if reset_filter:
+                st.session_state.filter_multiselect = []
+                st.rerun()
 
 # MongoDB 연결 설정
 uri = "mongodb+srv://coq3820:JmbIOcaEOrvkpQo1@cluster0.qj1ty.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
@@ -578,6 +607,14 @@ elif selected_collection and selected_collection != 'empty_data':
         
         if data:
             df = pd.DataFrame(data)
+            
+            # 04_test_item_today_data 컬렉션이 선택되고 필터가 적용된 경우
+            if selected_collection == '04_test_item_today_data' and 'filter_multiselect' in st.session_state and st.session_state.filter_multiselect:
+                # 필터 적용 로직
+                # 예시: 선택된 필터 옵션에 따라 데이터 필터링
+                st.info(f"선택된 필터: {', '.join(st.session_state.filter_multiselect)}")
+                # 실제 필터링 로직은 데이터 구조에 맞게 구현 필요
+            
             for col in df.columns:
                 if 'views' in col or 'likes' in col or 'comments' in col:
                     df[col] = pd.to_numeric(df[col], errors='coerce')
