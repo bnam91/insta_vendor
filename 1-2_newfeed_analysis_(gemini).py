@@ -30,6 +30,10 @@
    - 상품 유사도 처리 로그
    - 포함 정보: 유사도 비교 과정, 결과, API 응답 정보
 
+4. brand_normalization.log
+   - 브랜드 정규화 처리 로그
+   - 포함 정보: 브랜드 유사도 검사 결과, 병합 과정, 새 브랜드 등록 정보
+
 실행 결과:
 1. 콘솔 출력
    - 총 분석할 게시글 수 표시
@@ -87,15 +91,18 @@
    - 공구 게시물 여부 판단 (공구예고/공구오픈/공구리마인드/확인필요/N)
    - 상품명, 브랜드명 추출
    - 공구 시작일/종료일 추출
-3. Gemini AI를 사용하여 상품 카테고리 분석:
-   - 주 카테고리 및 서브 카테고리 분류
-   - 상품명 기반 자동 카테고리 할당
+3. Gemini AI를 사용하여:
+   - 각 게시물 2회 분석 후 최적 결과 선택
+   - 상품 카테고리 및 서브 카테고리 분류
 4. OpenAI API를 사용한 상품 유사도 측정:
    - 20일 이내 유사 상품 중복 체크
    - 70% 이상 유사도 시 중복으로 판단
-5. 분석 결과를 MongoDB에 자동 업데이트
-6. 인플루언서 데이터 자동 업데이트
-7. 브랜드 카테고리 관리 및 자동 등록
+5. 브랜드 정규화 처리:
+   - Jaro-Winkler 알고리즘을 사용한 브랜드명 유사도 측정
+   - 유사 브랜드 자동 병합 및 별칭 관리
+   - 새로운 브랜드 자동 등록
+6. 분석 결과를 MongoDB에 자동 업데이트
+7. 인플루언서 데이터 자동 업데이트
 
 데이터 처리 규칙:
 1. 공구 분류:
@@ -111,9 +118,11 @@
    - 연도 미지정시 현재 연도 사용
 
 3. 브랜드 처리:
-   - 08_test_brand_category_data에서 브랜드 정규화
+   - 브랜드명 유사도 0.85 이상 시 유사 브랜드로 판단
+   - 유사 브랜드 발견 시 자동 병합 및 별칭 통합
+   - 대표 브랜드 선정 기준: 별칭 수, 한글 포함, 공백 없음, 이름 길이
    - 미등록 브랜드 자동 등록 (status: 'ready')
-   - 별칭(aliases) 관리 지원
+   - 복수 브랜드인 경우 '복합상품'으로 처리
 
 4. 상품 중복 체크:
    - 동일 상품 20일 이내 중복 등록 방지
@@ -163,6 +172,8 @@ from pymongo.server_api import ServerApi
 import google.generativeai as genai  # 제미나이 API 추가
 import re
 import openai
+from jellyfish import jaro_winkler_similarity
+import logging
 
 def get_mongodb_connection():
     uri = "mongodb+srv://coq3820:JmbIOcaEOrvkpQo1@cluster0.qj1ty.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
@@ -789,10 +800,13 @@ def analyze_instagram_feed():
                             start_date = validate_date(str(result['start_date']), created_date)
                             end_date = validate_date(str(result['end_date']), created_date)
                             
+                            # 브랜드명 정규화 처리 추가
+                            normalized_brand = normalize_brand(result['brand_name'], collections['brands'])
+                            
                             update_data = {
                                 '09_feed': result['is_group_buy'],
                                 '09_item': str(result['product_name']),
-                                '09_brand': str(result['brand_name']),
+                                '09_brand': str(normalized_brand['name']),  # 정규화된 브랜드명 사용
                                 'open_date': start_date,
                                 'end_date': end_date,
                                 '09_item_category': '',
@@ -848,7 +862,7 @@ def analyze_instagram_feed():
                         if "429" in str(e):  # Resource exhausted 에러
                             retry_count += 1
                             if retry_count < max_retries:
-                                print(f"API 할당량 초과. 30초 후 재시도... (시도 {retry_count}/{max_retries})")
+                                print(f"\nGemini API 할당량 초과. 30초 후 재시도... (시도 {retry_count}/{max_retries})")
                                 time.sleep(30)  # 30초 대기
                             else:
                                 print(f"최대 재시도 횟수 초과. 다음 실행 시 이어서 진행됩니다.")
@@ -958,6 +972,249 @@ def compare_and_select_best_result(result1, result2):
         selected_result['brand_name'] = '복합상품'
     
     return selected_result
+
+def setup_brand_logger():
+    """브랜드 정규화 로깅 설정"""
+    # 로그 디렉토리 생성
+    log_dir = "brand_logs"
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
+    
+    # 로그 파일명 생성 (고정된 이름)
+    log_filename = os.path.join(log_dir, "brand_normalization.log")
+    
+    # 로거 설정
+    logger = logging.getLogger('brand_normalizer')
+    logger.setLevel(logging.INFO)
+    
+    # 파일 핸들러 (append 모드)
+    file_handler = logging.FileHandler(log_filename, encoding='utf-8', mode='a')
+    file_handler.setLevel(logging.INFO)
+    
+    # 포맷 설정
+    formatter = logging.Formatter('%(message)s')
+    file_handler.setFormatter(formatter)
+    
+    # 기존 핸들러 제거 (중복 로깅 방지)
+    if logger.hasHandlers():
+        logger.handlers.clear()
+    
+    # 핸들러 추가
+    logger.addHandler(file_handler)
+    
+    return logger
+
+def normalize_brand(brand_name, brands_collection):
+    """브랜드명 정규화 및 병합 처리"""
+    try:
+        logger = setup_brand_logger()
+        
+        logger.info(f"\n{'='*50}")
+        logger.info(f"검사 대상 브랜드: '{brand_name}'")
+        logger.info(f"검사 시작 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        
+        # None, Unspecified, 빈 값 처리
+        if not brand_name or brand_name in ['None', 'Unspecified', '확인필요']:
+            logger.info("⚠️ 브랜드명이 없거나 미지정 상태입니다.")
+            logger.info(f"{'='*50}\n")
+            return {'name': '확인필요', 'category': ''}
+        
+        # 유사도 높은 브랜드들 1차 추출
+        similar_brands = []
+        all_brands = list(brands_collection.find())
+        
+        for brand in all_brands:
+            similarity = jaro_winkler_similarity(brand_name.lower(), brand['name'].lower())
+            if similarity >= 0.8:
+                similar_brands.append((brand['name'], brand, similarity))
+        
+        # 유사 브랜드 로깅
+        if not similar_brands:
+            logger.info("📢 유사도 0.8 이상인 브랜드가 없습니다.")
+            logger.info(f"{'='*50}\n")
+            return {'name': brand_name, 'category': ''}
+        
+        logger.info("\n📋 유사도 0.8 이상 후보군:")
+        for brand, info, similarity in similar_brands:
+            logger.info(f"- {brand} (유사도: {similarity:.4f})")
+            if info.get('aliases'):
+                logger.info(f"  └ 기존 별칭: {', '.join(info['aliases'])}")
+        
+        # Gemini API 분석
+        if similar_brands:
+            analysis = analyze_brands_with_gemini(brand_name, similar_brands[:10])
+            
+            if analysis and analysis.get('representative_brand'):
+                logger.info("\n🤖 Gemini 분석 결과:")
+                logger.info(f"대표 브랜드: '{analysis['representative_brand']}'")
+                logger.info(f"별칭으로 처리: {analysis.get('aliases', [])}")
+                if analysis.get('different_brands'):
+                    logger.info(f"다른 브랜드로 인식: {analysis['different_brands']}")
+                
+                rep_brand = analysis['representative_brand']
+                new_aliases = analysis.get('aliases', [])
+                
+                # 대표 브랜드 문서 업데이트
+                rep_doc = brands_collection.find_one({'name': rep_brand})
+                if rep_doc:
+                    # 기존 별칭들도 포함하여 병합
+                    existing_aliases = []
+                    for brand, info, _ in similar_brands:
+                        if brand in new_aliases:  # Gemini가 별칭으로 판단한 브랜드의
+                            existing_aliases.extend(info.get('aliases', []))  # 기존 별칭들도 추가
+                
+                    # merge_aliases 함수를 사용하여 모든 별칭 병합
+                    merged_aliases = merge_aliases(
+                        rep_doc.get('aliases', []),  # 대표 브랜드의 기존 별칭
+                        existing_aliases + new_aliases,  # 새로운 별칭들과 그들의 기존 별칭
+                        brand_name  # 현재 처리 중인 브랜드
+                    )
+                    
+                    # MongoDB 업데이트
+                    brands_collection.update_one(
+                        {'name': rep_brand},
+                        {'$set': {
+                            'aliases': merged_aliases,
+                            'status': 'done'
+                        }}
+                    )
+                    
+                    # 별칭 브랜드들 삭제
+                    for alias in new_aliases:
+                        brands_collection.delete_one({'name': alias})
+                    
+                    logger.info(f"최종 병합된 별칭 목록: {merged_aliases}")  # 로깅 추가
+                    
+                    return {
+                        'name': rep_brand,
+                        'category': rep_doc.get('category', '')
+                    }
+                
+                # rep_doc이 없는 경우의 처리 추가
+                else:
+                    # 대표 브랜드로 새 문서 생성
+                    new_brand = {
+                        'name': rep_brand,
+                        'aliases': [alias.strip('- ') for alias in merged_aliases],  # '-' 제거
+                        'status': 'done'
+                    }
+                    brands_collection.insert_one(new_brand)
+                    
+                    # 별칭 브랜드들 삭제
+                    for alias in merged_aliases:
+                        alias = alias.strip('- ')  # '-' 제거
+                        brands_collection.delete_one({'name': alias})
+                    
+                    return {
+                        'name': rep_brand,
+                        'category': ''
+                    }
+        
+        # 새 브랜드 등록
+        new_brand = {
+            'name': brand_name,
+            'category': '',
+            'aliases': [brand_name],
+            'level': '',
+            'status': 'ready'
+        }
+        brands_collection.insert_one(new_brand)
+        
+        logger.info("\n📝 새 브랜드 등록:")
+        logger.info(f"브랜드명: '{brand_name}'")
+        logger.info(f"{'='*50}\n")
+        
+        return {'name': brand_name, 'category': ''}
+        
+    except Exception as e:
+        error_message = f"브랜드 정규화 중 오류 발생: {str(e)}"
+        logger.error(f"\n❌ {error_message}")
+        logger.info(f"{'='*50}\n")
+        print(error_message)
+        return {'name': brand_name, 'category': ''}
+
+def analyze_brands_with_gemini(target_brand, similar_brands):
+    """Gemini API를 사용하여 브랜드 관계 분석"""
+    max_retries = 5
+    retry_count = 0
+    wait_time = 10
+    
+    while retry_count < max_retries:
+        try:
+            prompt = f"""
+당신은 브랜드 분류 전문가입니다. 브랜드의 의미와 맥락을 정확히 이해하고 분석해야 합니다.
+
+이 작업의 목적은 인스타그램에서 수집된 브랜드 데이터를 정리하는 것입니다.
+같은 브랜드가 다양한 형태로 표기되어 있어, 이를 하나의 대표 브랜드명으로 통일하고 
+나머지는 별칭으로 처리해야 합니다.
+지금 검사하는 브랜드는 "{target_brand}"입니다.
+이 브랜드와 유사도가 높은 브랜드들은 다음과 같습니다:
+
+{[f"- {brand} (유사도: {similarity:.3f})" for brand, _, similarity in similar_brands]}
+
+주의사항:
+1. 검사 대상 브랜드명("{target_brand}")을 절대 변경하지 마세요.
+2. 검사 대상 브랜드가 대표 브랜드가 될 수도 있고, 다른 브랜드의 별칭이 될 수도 있습니다.
+3. 유사도만으로 판단하지 말고, 브랜드의 의미와 맥락을 고려하세요.
+4. 확실하지 않은 경우 다른 브랜드로 분류하세요.
+
+반드시 아래 형식의 JSON으로만 응답해주세요:
+{{
+    "representative_brand": "string",  # 대표 브랜드로 선정된 이름
+    "aliases": ["string"],            # 확실히 같은 브랜드인 경우만 별칭으로 처리
+    "different_brands": ["string"]    # 의심스러운 경우 모두 다른 브랜드로 제외
+}}
+"""
+            
+            model = genai.GenerativeModel('gemini-2.0-flash')
+            response = model.generate_content(prompt)
+            text = response.text.strip()
+            
+            # JSON 형식 정리
+            if text.startswith('```json'):
+                text = text[7:]
+            if text.endswith('```'):
+                text = text[:-3]
+            text = text.strip()
+            
+            result = json.loads(text)
+            return result
+            
+        except Exception as e:
+            if "429" in str(e):  # API 할당량 초과 오류
+                retry_count += 1
+                print(f"\nGemini API 할당량 초과. {wait_time}초 대기 중... (시도 {retry_count}/{max_retries})")
+                time.sleep(wait_time)
+                wait_time += 10
+                continue
+            else:
+                print(f"Gemini API 오류: {e}")
+                return None
+    
+    print(f"\n최대 재시도 횟수({max_retries})를 초과했습니다.")
+    return None
+
+def normalize_brand_name(name):
+    """브랜드명 정규화 (대소문자 구분 없애고, 공백 제거)"""
+    return name.lower().strip()
+
+def merge_aliases(main_aliases, sub_aliases, sub_brand):
+    """aliases 병합 시 중복 제거 및 정규화"""
+    # 모든 별칭을 소문자로 변환하여 set에 저장
+    normalized_aliases = {normalize_brand_name(alias) for alias in main_aliases}
+    
+    # 새로운 별칭들 추가
+    for alias in sub_aliases:
+        normalized_alias = normalize_brand_name(alias)
+        if normalized_alias not in normalized_aliases:
+            normalized_aliases.add(normalized_alias)
+    
+    # 서브 브랜드명도 별칭으로 추가
+    normalized_sub_brand = normalize_brand_name(sub_brand)
+    if normalized_sub_brand not in normalized_aliases:
+        normalized_aliases.add(normalized_sub_brand)
+    
+    return list(normalized_aliases)
 
 if __name__ == "__main__":
     analyze_instagram_feed()

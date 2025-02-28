@@ -2,6 +2,7 @@ import json
 from pymongo.mongo_client import MongoClient
 from pymongo.server_api import ServerApi
 from bson import ObjectId  # ObjectId를 가져옵니다.
+from datetime import datetime  # datetime 모듈을 가져옵니다.
 
 # MongoDB 연결
 uri = "mongodb+srv://coq3820:JmbIOcaEOrvkpQo1@cluster0.qj1ty.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
@@ -24,6 +25,8 @@ try:
     def convert_objectid_to_str(data):
         if isinstance(data, ObjectId):
             return str(data)
+        elif isinstance(data, datetime):  # datetime 객체 처리 추가
+            return data.isoformat()  # ISO 형식의 문자열로 변환
         elif isinstance(data, dict):
             # _id 필드 삭제
             data.pop('_id', None)

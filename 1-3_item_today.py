@@ -2,22 +2,63 @@
 1-3_item_today.py - 인플루언서 공구 아이템 데이터 처리 및 업데이트
 
 입력 데이터:
-1. MongoDB '01_test_newfeed_crawl_data' 컬렉션: 크롤링된 새로운 피드 데이터
-2. brand_category.json: 브랜드 정보 및 카테고리 데이터
-3. MongoDB '02_test_influencer_data' 컬렉션: 인플루언서 정보 데이터
-4. MongoDB '04_test_item_today_data' 컬렉션: 기존에 처리된 아이템 데이터
+1. MongoDB '01_test_newfeed_crawl_data' 컬렉션
+   - 크롤링된 새로운 피드 데이터
+   - 공구 아이템 정보 포함
+   - 주요 키: author, post_url, crawl_date, 09_brand, 09_item, 09_item_category, processed
+
+2. brand_category.json
+   - 브랜드 정보 및 카테고리 매핑 데이터
+   - 브랜드 별칭(aliases) 정보 포함
+   - 주요 키: brands{name, category, level, aliases}
+
+3. MongoDB '02_test_influencer_data' 컬렉션
+   - 인플루언서 기본 정보
+   - 등급 및 카테고리 정보
+   - 주요 키: username, clean_name, grade, category
+
+4. MongoDB '04_test_item_today_data' 컬렉션
+   - 기존 처리된 아이템 데이터
+   - NEW 표시 상태 정보
+   - 주요 키: NEW, crawl_date, brand_level, brand_category, brand, item, 
+             item_category, author, clean_name, grade, category, item_feed_link
 
 출력 데이터:
-1. MongoDB '04_test_item_today_data' 컬렉션: 업데이트된 최종 아이템 데이터
-2. MongoDB '01_test_newfeed_crawl_data' 컬렉션: 처리 상태가 업데이트된 피드 데이터
+1. MongoDB '04_test_item_today_data' 컬렉션 업데이트
+   - 새로운 아이템 추가
+   - NEW 표시 상태 갱신 (2일 이내 데이터)
+   - 중복 데이터 제거
 
-주요 기능:
-- 새로운 피드 데이터에서 미처리된 공구 아이템 추출
-- 브랜드 정보 매핑 (별칭 처리 포함)
-- 인플루언서 정보 연동
-- 중복 데이터 필터링 (작성자, 브랜드, 날짜 기준)
-- NEW 표시 업데이트 (2일 이내 데이터)
-- MongoDB 데이터베이스 연동 및 데이터 관리
+2. MongoDB '01_test_newfeed_crawl_data' 컬렉션 업데이트
+   - 처리 완료된 피드 데이터 상태 변경 (processed: true)
+
+주요 처리 과정:
+1. 미처리 공구 아이템 식별 및 추출
+   - 01_test_newfeed_crawl_data에서 processed가 false인 데이터 추출
+   - 09_brand 필드가 있는 데이터만 선별
+
+2. 브랜드 정보 매핑 및 카테고리 연동
+   - brand_category.json의 brands 정보로 브랜드명 정규화
+   - 브랜드의 level, category 정보 매핑
+   - aliases를 통한 다양한 브랜드명 표기 통일
+
+3. 인플루언서 정보 매핑
+   - 02_test_influencer_data의 username으로 인플루언서 정보 매핑
+   - clean_name, grade, category 정보 연동
+
+4. 중복 데이터 필터링 (작성자/브랜드/날짜 기준)
+   - 동일 작성자(author)의 동일 브랜드(brand) 게시물 확인
+   - 20일 이내 중복 게시물 필터링
+   - 04_test_item_today_data의 기존 데이터와 비교
+
+5. NEW 표시 상태 관리
+   - crawl_date 기준 2일 이내 데이터 'NEW' 표시
+   - 기존 데이터의 NEW 상태 갱신
+
+6. MongoDB 데이터 동기화
+   - 04_test_item_today_data에 새로운 아이템 추가
+   - 01_test_newfeed_crawl_data의 processed 상태 갱신
+   - 기존 데이터의 NEW 표시 업데이트
 """
 
 from datetime import datetime
@@ -64,7 +105,7 @@ def update_data():
             for item in existing_data:
                 collection_date = datetime.strptime(item.get('crawl_date', ''), '%Y-%m-%d')
                 days_difference = (today_date - collection_date).days
-                item['NEW'] = 'NEW' if days_difference <= 2 else ''
+                item['NEW'] = 'NEW' if days_difference <= 3 else ''
         except Exception as e:
             existing_data = []
             print(f"- 기존 데이터 읽기 오류: {str(e)}")
@@ -81,10 +122,14 @@ def update_data():
             print(f"새로운 피드 데이터 읽기 오류: {str(e)}")
             newfeed_data = []
 
-        # brand_category.json 파일 읽기
-        with open('brand_category.json', 'r', encoding='utf-8') as f:
-            brand_category_data = json.load(f)
-            
+        # brand_category.json 파일 읽기 대신 MongoDB에서 브랜드 카테고리 데이터 읽기
+        try:
+            brand_category_data = list(db['08_test_brand_category_data'].find())
+            print(f"- 브랜드 카테고리 데이터 수: {len(brand_category_data)}개")
+        except Exception as e:
+            print(f"브랜드 카테고리 데이터 읽기 오류: {str(e)}")
+            brand_category_data = []
+
         # 인플루언서 데이터 읽기
         try:
             influencer_data = list(db['02_test_influencer_data'].find())
@@ -94,9 +139,10 @@ def update_data():
             print(f"인플루언서 데이터 읽기 오류: {str(e)}")
             influencer_dict = {}
 
-        # 브랜드 매핑 딕셔너리 생성
+        # 브랜드 매핑 딕셔너리 생성 수정
         brand_mapping = {}
-        for brand_name, brand_info in brand_category_data['brands'].items():  # 'brands' 키 추가
+        for brand_info in brand_category_data:
+            brand_name = brand_info.get('name', '')
             brand_mapping[brand_name] = {
                 'name': brand_name,
                 'category': brand_info.get('category', ''),
