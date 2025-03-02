@@ -26,7 +26,7 @@
    - 데이터 처리 중 발생하는 오류 로그
    - 포함 정보: 시간, 인플루언서명, 오류 내용
 
-3. 9-2.log
+3. product_similarity.log
    - 상품 유사도 처리 로그
    - 포함 정보: 유사도 비교 과정, 결과, API 응답 정보
 
@@ -208,6 +208,9 @@ def update_influencer_data(item, collections):
         influencers_collection = collections['influencers']
         influencer = influencers_collection.find_one({'username': item['author']})
         
+        # 로그 디렉토리 설정
+        log_dir = setup_log_directory()
+        
         # 브랜드명 정규화 및 카테고리 찾기 함수
         def normalize_brand(brand_name):
             brand_info = brands_collection.find_one({
@@ -245,7 +248,7 @@ def update_influencer_data(item, collections):
         if not influencer:
             # 미등록 인플루언서 로그 기록
             log_message = f"[{item['cr_at']}] 미등록 인플루언서 발견: {item['author']} (게시물링크: {item['post_url']})\n"
-            with open('unregistered_influencers.log', 'a', encoding='utf-8') as log_file:
+            with open(os.path.join(log_dir, 'unregistered_influencers.log'), 'a', encoding='utf-8') as log_file:
                 log_file.write(log_message)
             print(f"미등록 인플루언서 로그 기록: {item['author']}")
             return
@@ -259,6 +262,7 @@ def update_influencer_data(item, collections):
 
         brands = item['09_brand'].split(', ')
         for brand in brands:
+            # 외부 normalize_brand 함수 사용, 작성자 정보 전달
             brand_info = normalize_brand(brand)
             normalized_brand_name = brand_info['name']
             
@@ -318,7 +322,7 @@ def update_influencer_data(item, collections):
                 product_exists = False
                 
                 # 유사도 처리 로그 시작
-                with open('9-2.log', 'a', encoding='utf-8') as log_file:
+                with open(os.path.join(log_dir, 'product_similarity.log'), 'a', encoding='utf-8') as log_file:
                     log_file.write(f"\n===== 유사도 처리 시작: {item['author']} - {normalized_brand_name} - {item['09_item']} =====\n")
                 
                 for product in products:
@@ -329,15 +333,15 @@ def update_influencer_data(item, collections):
                     # 날짜 차이가 20일 이내인 경우에만 유사도 검사
                     if date_diff <= 20:
                         # 유사도 처리 로그
-                        with open('9-2.log', 'a', encoding='utf-8') as log_file:
+                        with open(os.path.join(log_dir, 'product_similarity.log'), 'a', encoding='utf-8') as log_file:
                             log_file.write(f"비교 대상: {product['item']} (언급일: {product['mentioned_date']})\n")
                             log_file.write(f"날짜 차이: {date_diff}일\n")
                         
                         # 유사도 측정
-                        similarity_score, input_tokens, output_tokens = calculate_similarity(product['item'], item['09_item'])
+                        similarity_score, input_tokens, output_tokens = calculate_similarity(product['item'], item['09_item'], log_dir)
                         
                         # 유사도 결과 로그
-                        with open('9-2.log', 'a', encoding='utf-8') as log_file:
+                        with open(os.path.join(log_dir, 'product_similarity.log'), 'a', encoding='utf-8') as log_file:
                             log_file.write(f"유사도 점수: {similarity_score}%\n")
                         
                         # 유사도가 70% 이상이면 중복으로 판단
@@ -347,13 +351,13 @@ def update_influencer_data(item, collections):
                             print(message)
                             
                             # 중복 발견 로그
-                            with open('9-2.log', 'a', encoding='utf-8') as log_file:
+                            with open(os.path.join(log_dir, 'product_similarity.log'), 'a', encoding='utf-8') as log_file:
                                 log_file.write(f"결과: {message}\n")
                             
                             break
                 
                 # 유사도 처리 로그 종료
-                with open('9-2.log', 'a', encoding='utf-8') as log_file:
+                with open(os.path.join(log_dir, 'product_similarity.log'), 'a', encoding='utf-8') as log_file:
                     if not product_exists:
                         log_file.write("결과: 중복 상품 없음\n")
                     log_file.write(f"===== 유사도 처리 종료 =====\n")
@@ -373,16 +377,21 @@ def update_influencer_data(item, collections):
         print(f"인플루언서 데이터 업데이트 완료: {item['author']}")
 
     except Exception as e:
+        log_dir = setup_log_directory()
         error_message = f"[{item['cr_at']}] 오류 발생 - 인플루언서: {item['author']}, 오류: {str(e)}\n"
-        with open('influencer_update_errors.log', 'a', encoding='utf-8') as error_file:
+        with open(os.path.join(log_dir, 'influencer_update_errors.log'), 'a', encoding='utf-8') as error_file:
             error_file.write(error_message)
         print(f"인플루언서 데이터 업데이트 중 오류 발생: {str(e)}")
 
-def calculate_similarity(item1, item2):
+def calculate_similarity(item1, item2, log_dir=None):
     """두 상품의 유사도 계산"""
     try:
+        # 로그 디렉토리가 전달되지 않은 경우 설정
+        if log_dir is None:
+            log_dir = setup_log_directory()
+            
         # 유사도 처리 로그
-        with open('9-2.log', 'a', encoding='utf-8') as log_file:
+        with open(os.path.join(log_dir, 'product_similarity.log'), 'a', encoding='utf-8') as log_file:
             log_file.write(f"API 요청 시작: {item1} vs {item2}\n")
         
         # OpenAI 클라이언트 초기화
@@ -415,7 +424,7 @@ def calculate_similarity(item1, item2):
         similarity_score = int(similarity_response.choices[0].message.content.strip())
         
         # 유사도 처리 로그
-        with open('9-2.log', 'a', encoding='utf-8') as log_file:
+        with open(os.path.join(log_dir, 'product_similarity.log'), 'a', encoding='utf-8') as log_file:
             log_file.write(f"API 응답 수신: 유사도 {similarity_score}%, 입력 토큰: {input_tokens}, 출력 토큰: {output_tokens}\n")
         
         return similarity_score, input_tokens, output_tokens
@@ -424,8 +433,12 @@ def calculate_similarity(item1, item2):
         error_msg = f"유사도 측정 중 오류 발생: {str(e)}"
         print(error_msg)
         
+        # 로그 디렉토리가 전달되지 않은 경우 설정
+        if log_dir is None:
+            log_dir = setup_log_directory()
+            
         # 오류 로그
-        with open('9-2.log', 'a', encoding='utf-8') as log_file:
+        with open(os.path.join(log_dir, 'product_similarity.log'), 'a', encoding='utf-8') as log_file:
             log_file.write(f"오류: {error_msg}\n")
         
         return 0, 0, 0  # 오류 발생 시 0 반환
@@ -611,10 +624,10 @@ def analyze_instagram_feed():
             
             try:
                 # API 할당량 초과 시 재시도 로직
-                max_retries = 3
                 retry_count = 0
+                wait_time = 10  # 초기 대기 시간 10초
                 
-                while retry_count < max_retries:
+                while True:  # 무한 루프로 변경
                     try:
                         # 이미 처리된 데이터 체크 로직
                         if item.get('09_feed'):
@@ -623,13 +636,25 @@ def analyze_instagram_feed():
                                 {'_id': item['_id']},
                                 {'$set': {'processed': True}}
                             )
-                            continue  # break를 continue로 수정
+                            break  # 처리 완료 시 루프 종료
 
                         # 본문 내용 확인
                         content = item.get('content')
+                        author = item.get('author')
+
                         if not content or not content.strip():
-                            print(f"{i}번 게시글: 본문 내용이 비어있습니다.")
-                            continue  # processed를 True로 설정하지 않고 다음 게시물로 넘어감
+                            if not author:  # author도 비어있는 경우
+                                print(f"본문 내용과 작성자가 비어있어 삭제합니다. (게시물 링크: {item['post_url']})")
+                                feeds_collection.delete_one({'_id': item['_id']})  # 도큐먼트 삭제
+                            else:
+                                print(f"본문 내용이 비어있습니다. (작성자: {author}, 게시물 링크: {item['post_url']})")
+                            
+                            # 게시글 처리 상태 업데이트
+                            feeds_collection.update_one(
+                                {'_id': item['_id']},
+                                {'$set': {'processed': True}}  # 처리 완료로 설정
+                            )
+                            break  # 다음 게시물로 넘어감
                         
                         print(f"{i}번 게시글: Gemini 분석 요청 중...")
                         
@@ -757,7 +782,7 @@ def analyze_instagram_feed():
                             result['brand_name'] = '확인필요'
 
                         # Gemini 응답 출력
-                        print(f"{i}번 게시글: Gemini 응답 내용: {json.dumps(result, ensure_ascii=False, indent=4)}")
+                        print(f"{i}번 게시글: Gemini 응답 내용: {json.dumps(result, ensure_ascii=False, indent=4)} (작성자: {item['author']}, 게시물 링크: {item['post_url']})")
                         
                         # 날짜 형식 검증 및 정리 함수
                         def validate_date(date_str, created_date=None):
@@ -801,7 +826,7 @@ def analyze_instagram_feed():
                             end_date = validate_date(str(result['end_date']), created_date)
                             
                             # 브랜드명 정규화 처리 추가
-                            normalized_brand = normalize_brand(result['brand_name'], collections['brands'])
+                            normalized_brand = normalize_brand(result['brand_name'], collections['brands'], item['author'])
                             
                             update_data = {
                                 '09_feed': result['is_group_buy'],
@@ -861,15 +886,11 @@ def analyze_instagram_feed():
                     except Exception as e:
                         if "429" in str(e):  # Resource exhausted 에러
                             retry_count += 1
-                            if retry_count < max_retries:
-                                print(f"\nGemini API 할당량 초과. 30초 후 재시도... (시도 {retry_count}/{max_retries})")
-                                time.sleep(30)  # 30초 대기
-                            else:
-                                print(f"최대 재시도 횟수 초과. 다음 실행 시 이어서 진행됩니다.")
-                                return  # 프로그램 종료
+                            print(f"\nGemini API 할당량 초과. {wait_time}초 후 재시도... (시도 {retry_count}번째)")
+                            time.sleep(wait_time)  # 10초 대기
                         else:
                             print(f"{i}번 게시글: 처리 중 오류 발생 - {str(e)}")
-                            break
+                            break  # 다른 오류 발생 시 루프 종료
                 
             except Exception as e:
                 print(f"{i}번 게시글: 처리 중 오류 발생 - {str(e)}")
@@ -1004,13 +1025,22 @@ def setup_brand_logger():
     
     return logger
 
-def normalize_brand(brand_name, brands_collection):
+def setup_log_directory():
+    """로그 디렉토리 생성"""
+    log_dir = "brand_logs"
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
+    return log_dir
+
+def normalize_brand(brand_name, brands_collection, author=None):
     """브랜드명 정규화 및 병합 처리"""
     try:
         logger = setup_brand_logger()
         
         logger.info(f"\n{'='*50}")
         logger.info(f"검사 대상 브랜드: '{brand_name}'")
+        if author:
+            logger.info(f"작성자: '{author}'")
         logger.info(f"검사 시작 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
         
         # None, Unspecified, 빈 값 처리
@@ -1070,11 +1100,14 @@ def normalize_brand(brand_name, brands_collection):
                         brand_name  # 현재 처리 중인 브랜드
                     )
                     
+                    # '-' 제거 로직 추가
+                    cleaned_aliases = [alias.strip('- ') for alias in merged_aliases]
+
                     # MongoDB 업데이트
                     brands_collection.update_one(
                         {'name': rep_brand},
                         {'$set': {
-                            'aliases': merged_aliases,
+                            'aliases': cleaned_aliases,  # '-' 제거된 별칭 사용
                             'status': 'done'
                         }}
                     )
@@ -1083,7 +1116,7 @@ def normalize_brand(brand_name, brands_collection):
                     for alias in new_aliases:
                         brands_collection.delete_one({'name': alias})
                     
-                    logger.info(f"최종 병합된 별칭 목록: {merged_aliases}")  # 로깅 추가
+                    logger.info(f"최종 병합된 별칭 목록: {cleaned_aliases}")  # 로깅 추가
                     
                     return {
                         'name': rep_brand,
@@ -1095,16 +1128,16 @@ def normalize_brand(brand_name, brands_collection):
                     # 대표 브랜드로 새 문서 생성
                     new_brand = {
                         'name': rep_brand,
-                        'aliases': [alias.strip('- ') for alias in merged_aliases],  # '-' 제거
+                        'aliases': new_aliases,  # 초기화된 별칭 사용
                         'status': 'done'
                     }
                     brands_collection.insert_one(new_brand)
                     
                     # 별칭 브랜드들 삭제
-                    for alias in merged_aliases:
-                        alias = alias.strip('- ')  # '-' 제거
+                    for alias in new_aliases:
                         brands_collection.delete_one({'name': alias})
                     
+                    logger.info(f"새 브랜드로 등록: {rep_brand} (별칭: {new_aliases})")
                     return {
                         'name': rep_brand,
                         'category': ''
