@@ -163,8 +163,8 @@ def update_data():
         for item in newfeed_data:
             print(f"\n처리 시작: {item.get('author')} - {item.get('09_brand')}")
             
-            # processed가 없거나 False이고, 09_brand가 있는 경우 처리
-            if (('processed' not in item or item['processed'] == False) and item.get('09_brand')):
+            # processed가 있고 True인 경우, 09_brand가 있는 경우 처리
+            if (('processed' in item and item['processed'] == True) and item.get('09_brand')):
                 brand = item['09_brand'].strip()
                 brand_info = brand_mapping.get(brand, {'name': brand, 'category': '', 'level': ''})
                 
@@ -174,11 +174,11 @@ def update_data():
                 processed_item = {
                     'NEW': 'NEW',
                     'crawl_date': item['crawl_date'],
-                    'brand_level': brand_info['level'],
-                    'brand_category': brand_info['category'],
+                    'brand_level': brand_info['level'],                    
                     'brand': brand_info['name'],
-                    'item': item.get('09_item', ''),
                     'item_category': item.get('09_item_category', ''),
+                    'item': item.get('09_item', ''),            
+                    'brand_category': brand_info['category'],
                     'author': item['author'],
                     'clean_name': influencer.get('clean_name', ''),
                     'grade': influencer.get('grade', ''),

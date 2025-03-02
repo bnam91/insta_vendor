@@ -231,20 +231,49 @@ with st.sidebar:
         with filter_container:
             # 필터링 레이블 없이 다중선택 위젯 표시
             filter_options = st.multiselect(
-                "제외할 항목을 선택하세요 :",  # 레이블 제거
-                options=["옵션1", "옵션2", "옵션3", "옵션4", "옵션5"],
-                default=[],
+                "아이템 카테고리 제외하기 :",  # 레이블 제거
+                options=["", "🍽주방용품&식기", "🛋생활용품&가전", "🥦식품&건강식품", "🧴뷰티&헬스", "👶유아&교육", "👗의류&잡화", "🚗기타"],
+                default=["","👶유아&교육", "👗의류&잡화"],  # 기본 필터 설정
                 key="filter_multiselect"
             )
             
-            # 필터 적용 버튼
-            apply_filter = st.button("필터 적용", key="apply_filter_button")
+            # 카테고리 필터 추가            
+            col1, col2 = st.columns([3, 1])
+            
+            with col1:
+                category_filter = st.selectbox(
+                    "인플루언서 카테고리 선택 :",
+                    ['뷰티', '패션', '홈/리빙', '푸드', '육아', '건강', '맛집탐방', '전시/공연', '반려동물', '기타'],
+                    placeholder="카테고리 선택",
+                    key="category_filter_select"
+                )
+            
+            with col2:
+                category_threshold = st.text_input("", placeholder="%", key="category_filter_threshold")
+            
+            # 필터 적용 버튼 -> 시트에 추가하기 버튼으로 변경
+            add_to_sheet = st.button("시트에 추가하기", key="add_to_sheet_button")
             
             # 필터 초기화 버튼
             reset_filter = st.button("필터 초기화", key="reset_filter_button")
             
+            # 시트에 추가하기 버튼 클릭 처리
+            if add_to_sheet:
+                try:
+                    # 구글 시트 열기 - brand_today 시트로 직접 이동
+                    sheet_id = '1W5Xz4uaqSPysGLk28w6ybFHkGAPcz19_1BHdOih0Hoc'
+                    gid = '1773602371'  # brand_today 시트의 gid
+                    sheet_url = f'https://docs.google.com/spreadsheets/d/{sheet_id}/edit?gid={gid}#gid={gid}'
+                    webbrowser.open(sheet_url)
+                    st.toast('brand_today 시트가 새 탭에서 열렸습니다.', icon='✅')
+                except Exception as e:
+                    st.error(f'스프레드시트를 여는 중 오류가 발생했습니다: {str(e)}')
+                    st.toast('스프레드시트 열기 실패', icon='❌')
+            
             if reset_filter:
                 st.session_state.filter_multiselect = []
+                st.session_state.category_filter_select = None
+                st.session_state.category_filter_threshold = ""
                 st.rerun()
 
 # MongoDB 연결 설정
@@ -609,17 +638,49 @@ elif selected_collection and selected_collection != 'empty_data':
             df = pd.DataFrame(data)
             
             # 04_test_item_today_data 컬렉션이 선택되고 필터가 적용된 경우
-            if selected_collection == '04_test_item_today_data' and 'filter_multiselect' in st.session_state and st.session_state.filter_multiselect:
-                # 필터 적용 로직
-                # 예시: 선택된 필터 옵션에 따라 데이터 필터링
-                st.info(f"선택된 필터: {', '.join(st.session_state.filter_multiselect)}")
-                # 실제 필터링 로직은 데이터 구조에 맞게 구현 필요
+            if selected_collection == '04_test_item_today_data':
+                # 아이템 카테고리 필터 적용
+                if 'filter_multiselect' in st.session_state and st.session_state.filter_multiselect:
+                    st.info(f"선택된 아이템 필터: {', '.join(st.session_state.filter_multiselect)}")
+                    # item_category 컬럼을 기준으로 필터링
+                    df = df[~df['item_category'].isin(st.session_state.filter_multiselect)]
+                
+                # 카테고리 필터 적용
+                if ('category_filter_select' in st.session_state and st.session_state.category_filter_select and
+                    'category_filter_threshold' in st.session_state and st.session_state.category_filter_threshold):
+                    try:
+                        category = st.session_state.category_filter_select
+                        threshold = float(st.session_state.category_filter_threshold)
+                        st.info(f"카테고리 필터: {category} {threshold}% 이상")
+                        
+                        # 카테고리 필터링 로직
+                        filtered_data = []
+                        for _, row in df.iterrows():
+                            if pd.notna(row.get('category')) and row['category']:
+                                categories = row['category'].split(',')
+                                for cat in categories:
+                                    if category in cat:
+                                        try:
+                                            percent_str = cat.split('(')[1].rstrip('%)')
+                                            percent = float(percent_str)
+                                            if percent >= threshold:
+                                                filtered_data.append(row)
+                                                break
+                                        except Exception:
+                                            continue
+                        
+                        if filtered_data:
+                            df = pd.DataFrame(filtered_data)
+                        else:
+                            st.warning(f"{category} 카테고리에서 {threshold}% 이상인 데이터가 없습니다.")
+                    except ValueError:
+                        st.error("카테고리 필터에 올바른 숫자를 입력해주세요.")
             
             for col in df.columns:
                 if 'views' in col or 'likes' in col or 'comments' in col:
                     df[col] = pd.to_numeric(df[col], errors='coerce')
             display_df = df
-            st.write(f"총 {len(data)}개의 데이터가 있습니다.")
+            st.write(f"총 {len(df)}개의 데이터가 있습니다.")
         else:
             display_df = empty_df
             st.warning("데이터가 없습니다.")
