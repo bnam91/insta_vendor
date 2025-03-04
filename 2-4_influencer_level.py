@@ -77,24 +77,54 @@
 import json
 import pandas as pd
 import numpy as np
+from pymongo import MongoClient
+from pymongo.server_api import ServerApi
+import os
 
-def load_data(file_path):
-    """JSON 파일에서 인플루언서 데이터를 로드"""
+def load_data_from_mongodb():
+    """MongoDB에서 인플루언서 데이터를 로드"""
     try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        return pd.DataFrame(data)
-    except FileNotFoundError:
-        print("파일을 찾을 수 없습니다:", file_path)
-        return None
-    except json.JSONDecodeError:
-        print("JSON 파일 형식이 올바르지 않습니다.")
-        return None
+        print("MongoDB 연결 시도 중...")
+        uri = os.getenv('MONGODB_URI', "mongodb+srv://coq3820:JmbIOcaEOrvkpQo1@cluster0.qj1ty.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
+        client = MongoClient(uri, server_api=ServerApi('1'))
+        
+        # 연결 테스트
+        client.admin.command('ping')
+        print("MongoDB 연결 성공!")
+        
+        # 데이터베이스와 컬렉션 선택
+        db = client['insta09_database']
+        collection = db['02_test_influencer_data']
+        
+        # 모든 문서 가져오기
+        print("데이터 로드 중...")
+        data = list(collection.find())
+        print(f"총 {len(data)}개의 문서를 로드했습니다.")
+        
+        if len(data) > 0:
+            print(f"첫 번째 문서 샘플: {data[0].keys()}")
+        
+        return pd.DataFrame(data), collection
+    except Exception as e:
+        print("MongoDB 연결 또는 데이터 로드 오류:", str(e))
+        print("자세한 오류 정보:", repr(e))
+        return None, None
 
 def clean_numeric_data(df):
     """숫자 데이터 정제"""
-    # 숫자 데이터를 포함하는 모든 컬럼에 대해 처리
-    for col in ['팔로워', '게시물', '릴스평균조회수(최근 15개)', '콘텐츠점수(5점)']:
+    print("데이터 정제 시작...")
+    
+    # 필드 존재 여부 확인
+    existing_columns = df.columns.tolist()
+    print(f"데이터프레임 컬럼: {existing_columns}")
+    
+    # 영어 필드명으로 변경된 컬럼들에 대해 처리
+    for col in ['followers', 'posts', 'reels_views(15)', 'content_score']:
+        if col not in df.columns:
+            print(f"경고: '{col}' 컬럼이 데이터프레임에 없습니다.")
+            continue
+            
+        print(f"'{col}' 컬럼 정제 중...")
         # 빈 문자열이나 누락된 값을 0으로 변환
         df[col] = df[col].replace('', '0')
         # NaN 값을 0으로 변환
@@ -102,6 +132,8 @@ def clean_numeric_data(df):
         # 쉼표 제거 후 숫자로 변환
         df[col] = df[col].astype(str).str.replace(',', '')
         df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+        
+    print("데이터 정제 완료")
     return df
 
 def calculate_follower_score(followers):
@@ -120,70 +152,70 @@ def calculate_percentile_score(value, percentiles, scores):
 def calculate_grades(df):
     """인플루언서 등급 및 점수 계산"""
     # 모든 점수 컬럼 초기화
-    df['최종점수'] = 0
-    df['팔로워점수'] = 0
-    df['게시물점수'] = 0
-    df['릴스점수'] = 0
-    df['콘텐츠가산점'] = 0
+    df['final_score'] = 0
+    df['follower_score'] = 0
+    df['post_score'] = 0
+    df['reels_score'] = 0
+    df['content_bonus_score'] = 0
     
     # R, D 등급 필터링
-    df['등급'] = 'C'
-    mask_r = df['팔로워'] < 5000
-    mask_d = (df['팔로워'] >= 5000) & (df['팔로워'] < 10000)
-    df.loc[mask_r, '등급'] = 'R'
-    df.loc[mask_d, '등급'] = 'D'
+    df['grade'] = 'C'
+    mask_r = df['followers'] < 5000
+    mask_d = (df['followers'] >= 5000) & (df['followers'] < 10000)
+    df.loc[mask_r, 'grade'] = 'R'
+    df.loc[mask_d, 'grade'] = 'D'
     
     # 점수 계산 대상
     scoring_mask = ~(mask_r | mask_d)
     
     # 1. 팔로워 점수
     # 먼저 20만 이상 계정에 30점 부여
-    df.loc[scoring_mask, '팔로워점수'] = df.loc[scoring_mask, '팔로워'].apply(calculate_follower_score)
+    df.loc[scoring_mask, 'follower_score'] = df.loc[scoring_mask, 'followers'].apply(calculate_follower_score)
     
     # 20만 미만 계정들에 대해 상대평가
-    follower_relative_mask = (scoring_mask) & (df['팔로워'] < 200000)
-    follower_percentiles = np.percentile(df.loc[follower_relative_mask, '팔로워'], 
+    follower_relative_mask = (scoring_mask) & (df['followers'] < 200000)
+    follower_percentiles = np.percentile(df.loc[follower_relative_mask, 'followers'], 
                                        [95, 90, 85, 80, 75, 70, 65, 60, 55, 50, 
                                         45, 40, 35, 30, 25, 20, 15, 10, 5])
     follower_scores = list(range(29, 0, -1))  # 29점부터 1점까지
-    df.loc[follower_relative_mask, '팔로워점수'] = df.loc[follower_relative_mask, '팔로워'].apply(
+    df.loc[follower_relative_mask, 'follower_score'] = df.loc[follower_relative_mask, 'followers'].apply(
         lambda x: calculate_percentile_score(x, follower_percentiles, follower_scores)
     )
     
     # 2. 게시물 점수 (상대평가)
-    post_percentiles = np.percentile(df.loc[scoring_mask, '게시물'], 
+    post_percentiles = np.percentile(df.loc[scoring_mask, 'posts'], 
                                    [95, 90, 85, 80, 75, 70, 65, 60, 55, 50, 
                                     45, 40, 35, 30, 25, 20, 15, 10, 5])
     post_scores = list(range(30, 1, -1))  # 30점부터 2점까지
-    df.loc[scoring_mask, '게시물점수'] = df.loc[scoring_mask, '게시물'].apply(
+    df.loc[scoring_mask, 'post_score'] = df.loc[scoring_mask, 'posts'].apply(
         lambda x: calculate_percentile_score(x, post_percentiles, post_scores)
     )
     
     # 3. 릴스 점수 (상대평가)
-    reels_percentiles = np.percentile(df.loc[scoring_mask, '릴스평균조회수(최근 15개)'], 
+    reels_percentiles = np.percentile(df.loc[scoring_mask, 'reels_views(15)'], 
                                     [95, 90, 85, 80, 75, 70, 65, 60, 55, 50, 
                                      45, 40, 35, 30, 25, 20, 15, 10, 5])
     reels_scores = list(range(40, 1, -2))  # 40점부터 2점까지 2점 간격
-    df.loc[scoring_mask, '릴스점수'] = df.loc[scoring_mask, '릴스평균조회수(최근 15개)'].apply(
+    df.loc[scoring_mask, 'reels_score'] = df.loc[scoring_mask, 'reels_views(15)'].apply(
         lambda x: calculate_percentile_score(x, reels_percentiles, reels_scores)
     )
     
     # 4. 콘텐츠 가산점
-    df.loc[scoring_mask, '콘텐츠가산점'] = df.loc[scoring_mask, '콘텐츠점수(5점)'] * 4
+    df.loc[scoring_mask, 'content_bonus_score'] = df.loc[scoring_mask, 'content_score'] * 4
     
     # 최종 점수 계산
-    df.loc[scoring_mask, '최종점수'] = (df.loc[scoring_mask, '팔로워점수'] + 
-                                    df.loc[scoring_mask, '게시물점수'] + 
-                                    df.loc[scoring_mask, '릴스점수'] + 
-                                    df.loc[scoring_mask, '콘텐츠가산점'])
+    df.loc[scoring_mask, 'final_score'] = (df.loc[scoring_mask, 'follower_score'] + 
+                                    df.loc[scoring_mask, 'post_score'] + 
+                                    df.loc[scoring_mask, 'reels_score'] + 
+                                    df.loc[scoring_mask, 'content_bonus_score'])
     
     # 기존 등급을 이전등급 배열에 추가
     for idx in df.index:
-        current_grade = df.at[idx, '등급']
-        previous_grades = df.at[idx, '이전등급']
+        current_grade = df.at[idx, 'grade']
+        previous_grades = df.at[idx, 'pre_grades']
         
-        # 이전등급이 문자열로 되어있거나 빈 문자열인 경우 빈 리스트로 초기화
-        if isinstance(previous_grades, str) or not previous_grades:
+        # 이전등급이 문자열로 되어있거나 빈 문자열이나 None인 경우 빈 리스트로 초기화
+        if not isinstance(previous_grades, list) or previous_grades is None:
             previous_grades = []
             
         # 현재 등급을 이전등급 배열의 앞쪽에 추가
@@ -193,47 +225,71 @@ def calculate_grades(df):
         if len(previous_grades) > 5:
             previous_grades = previous_grades[:5]
             
-        df.at[idx, '이전등급'] = previous_grades
+        df.at[idx, 'pre_grades'] = previous_grades
     
     # 최종 등급 부여
-    score_percentiles = np.percentile(df.loc[scoring_mask, '최종점수'], [85, 60, 30])
+    score_percentiles = np.percentile(df.loc[scoring_mask, 'final_score'], [85, 60, 30])
     conditions = [
-        df.loc[scoring_mask, '최종점수'] >= score_percentiles[0],
-        df.loc[scoring_mask, '최종점수'] >= score_percentiles[1],
-        df.loc[scoring_mask, '최종점수'] >= score_percentiles[2]
+        df.loc[scoring_mask, 'final_score'] >= score_percentiles[0],
+        df.loc[scoring_mask, 'final_score'] >= score_percentiles[1],
+        df.loc[scoring_mask, 'final_score'] >= score_percentiles[2]
     ]
     choices = ['S', 'A', 'B']
-    df.loc[scoring_mask, '등급'] = np.select(conditions, choices, default='C')
+    df.loc[scoring_mask, 'grade'] = np.select(conditions, choices, default='C')
     
     return df
 
+def update_mongodb(df, collection):
+    """계산된 결과를 MongoDB에 업데이트"""
+    for _, row in df.iterrows():
+        # 업데이트할 필드만 추출
+        update_data = {
+            'final_score': row['final_score'],
+            'follower_score': row['follower_score'],
+            'post_score': row['post_score'],
+            'reels_score': row['reels_score'],
+            'content_bonus_score': row['content_bonus_score'],
+            'grade': row['grade'],
+            'pre_grades': row['pre_grades']
+        }
+        
+        # _id로 문서 찾아서 업데이트
+        collection.update_one({'_id': row['_id']}, {'$set': update_data})
+    
+    print("MongoDB 업데이트 완료")
+
 def main():
-    # 데이터 로드
-    file_path = "2-2_influencer_processing_data.json"
-    df = load_data(file_path)
+    print("프로그램 시작")
+    
+    # MongoDB에서 데이터 로드
+    df, collection = load_data_from_mongodb()
     if df is None:
+        print("데이터를 로드할 수 없어 프로그램을 종료합니다.")
         return
+    
+    print(f"데이터프레임 크기: {df.shape}")
     
     # 데이터 정제
     df = clean_numeric_data(df)
     
     # 등급 및 점수 계산
+    print("등급 및 점수 계산 시작...")
     result_df = calculate_grades(df)
+    print("등급 및 점수 계산 완료")
     
-    # 원본 JSON 파일 업데이트
-    result_json = result_df.to_dict('records')
-    with open(file_path, 'w', encoding='utf-8') as f:
-        json.dump(result_json, f, ensure_ascii=False, indent=4)
+    # MongoDB 업데이트
+    print("MongoDB 업데이트 시작...")
+    update_mongodb(result_df, collection)
     
     # 결과 출력
     print("\n=== 등급별 통계 ===")
     print("\n1. 등급별 인플루언서 수:")
-    grade_counts = result_df['등급'].value_counts().sort_index()
+    grade_counts = result_df['grade'].value_counts().sort_index()
     for grade, count in grade_counts.items():
         print(f"{grade}등급: {count}명")
     
     print("\n2. 등급별 평균 점수:")
-    grade_scores = result_df.groupby('등급')['최종점수'].mean().round(2).sort_index()
+    grade_scores = result_df.groupby('grade')['final_score'].mean().round(2).sort_index()
     for grade, score in grade_scores.items():
         if grade not in ['R', 'D']:
             print(f"{grade}등급: {score}점")
@@ -241,14 +297,14 @@ def main():
     print("\n3. 인플루언서별 상세 점수:")
     for _, row in result_df.iterrows():
         print(f"\n[{row['username']}]")
-        print(f"팔로워: {row['팔로워']:,}명")
-        if row['등급'] not in ['R', 'D']:
-            print(f"팔로워점수: {row.get('팔로워점수', 0)}점")
-            print(f"게시물점수: {row.get('게시물점수', 0)}점")
-            print(f"릴스점수: {row.get('릴스점수', 0)}점")
-            print(f"콘텐츠가산점: {row.get('콘텐츠가산점', 0)}점")
-        print(f"최종점수: {row['최종점수']}점")
-        print(f"최종등급: {row['등급']}")
+        print(f"팔로워: {row['followers']:,}명")
+        if row['grade'] not in ['R', 'D']:
+            print(f"팔로워점수: {row.get('follower_score', 0)}점")
+            print(f"게시물점수: {row.get('post_score', 0)}점")
+            print(f"릴스점수: {row.get('reels_score', 0)}점")
+            print(f"콘텐츠가산점: {row.get('content_bonus_score', 0)}점")
+        print(f"최종점수: {row['final_score']}점")
+        print(f"최종등급: {row['grade']}")
 
 if __name__ == "__main__":
     main()
