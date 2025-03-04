@@ -98,7 +98,7 @@ def update_data():
         
         # 기존 데이터 읽기 및 NEW 표시 업데이트
         try:
-            existing_data = list(db['04_test_item_today_data'].find())
+            existing_data = list(db['04_main_item_today_data'].find())
             print(f"- 기존 데이터 수: {len(existing_data)}개")
             
             # 기존 데이터의 NEW 표시 업데이트
@@ -112,7 +112,7 @@ def update_data():
 
         # 새로운 피드 데이터 읽기
         try:
-            newfeed_data = list(db['01_test_newfeed_crawl_data'].find())
+            newfeed_data = list(db['01_main_newfeed_crawl_data'].find())
             if not newfeed_data:  # 데이터가 비어있는 경우
                 print("- 새로운 피드 데이터가 없습니다.")
                 newfeed_data = []
@@ -124,7 +124,7 @@ def update_data():
 
         # brand_category.json 파일 읽기 대신 MongoDB에서 브랜드 카테고리 데이터 읽기
         try:
-            brand_category_data = list(db['08_test_brand_category_data'].find())
+            brand_category_data = list(db['08_main_brand_category_data'].find())
             print(f"- 브랜드 카테고리 데이터 수: {len(brand_category_data)}개")
         except Exception as e:
             print(f"브랜드 카테고리 데이터 읽기 오류: {str(e)}")
@@ -132,7 +132,7 @@ def update_data():
 
         # 인플루언서 데이터 읽기
         try:
-            influencer_data = list(db['02_test_influencer_data'].find())
+            influencer_data = list(db['02_main_influencer_data'].find())
             # username으로 빠르게 검색하기 위한 딕셔너리 생성
             influencer_dict = {inf['username']: inf for inf in influencer_data}
         except Exception as e:
@@ -201,7 +201,7 @@ def update_data():
                 if not is_duplicate:
                     new_items.append(processed_item)
                     # MongoDB update
-                    db['01_test_newfeed_crawl_data'].update_one(
+                    db['01_main_newfeed_crawl_data'].update_one(
                         {'_id': item['_id']},
                         {'$set': {'processed': True}}
                     )
@@ -213,17 +213,17 @@ def update_data():
             if new_items:
                 # 새로운 아이템들 추가
                 try:
-                    before_count = db['04_test_item_today_data'].count_documents({})
+                    before_count = db['04_main_item_today_data'].count_documents({})
                     print(f"삽입 전 문서 수: {before_count}")
                     
-                    result = db['04_test_item_today_data'].insert_many(new_items)
+                    result = db['04_main_item_today_data'].insert_many(new_items)
                     
-                    after_count = db['04_test_item_today_data'].count_documents({})
+                    after_count = db['04_main_item_today_data'].count_documents({})
                     print(f"- 새로운 데이터 {len(new_items)}개 중 {after_count - before_count}개가 성공적으로 저장되었습니다.")
                     print(f"- 저장된 문서 ID들: {result.inserted_ids}")
                     
                     # 실제 저장 확인
-                    saved_docs = list(db['04_test_item_today_data'].find({'_id': {'$in': result.inserted_ids}}))
+                    saved_docs = list(db['04_main_item_today_data'].find({'_id': {'$in': result.inserted_ids}}))
                     print(f"- 실제 저장된 문서 수: {len(saved_docs)}개")
                     
                 except Exception as e:
@@ -233,7 +233,7 @@ def update_data():
             for item in existing_data:
                 if '_id' in item:  # _id가 있는 경우에만 업데이트
                     try:
-                        result = db['04_test_item_today_data'].update_one(
+                        result = db['04_main_item_today_data'].update_one(
                             {'_id': item['_id']},
                             {'$set': {'NEW': item['NEW']}}
                         )
@@ -243,7 +243,7 @@ def update_data():
                         print(f"문서 {item['_id']} 업데이트 중 오류 발생: {str(e)}")
             
             print("\n최종 데이터베이스 상태:")
-            final_count = db['04_test_item_today_data'].count_documents({})
+            final_count = db['04_main_item_today_data'].count_documents({})
             print(f"- 전체 데이터 수: {final_count}개")
 
         except Exception as e:

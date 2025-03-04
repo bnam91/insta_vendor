@@ -136,7 +136,7 @@ def get_instagram_urls():
         
         # 데이터베이스와 컬렉션 선택
         db = client['insta09_database']
-        collection = db['02_test_influencer_data']
+        collection = db['02_main_influencer_data']
         
         # 공구유무가 'Y'이고 카테고리가 비어있는 계정 찾기
         target_rows = []

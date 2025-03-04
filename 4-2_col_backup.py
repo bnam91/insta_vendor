@@ -20,7 +20,7 @@ try:
     collections_to_backup = [
         '01_main_newfeed_crawl_data',
         '02_main_influencer_data',
-        '08_test_brand_category_data'
+        '08_main_brand_category_data'
     ]
     
     # 현재 날짜 및 시간

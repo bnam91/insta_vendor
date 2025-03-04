@@ -5,19 +5,19 @@ full_name 기반으로 clean_name을 추출하여 업데이트하는 프로그�
 
 [데이터 흐름]
 1. MongoDB에서 clean_name이 비어있는 문서 검색
-2. full_name이 있는 경우 Gemini API를 사용하여 clean_name 추출
+2. full_name이 있는 경우 OpenAI GPT-4o-mini API를 사용하여 clean_name 추출
 3. 추출된 clean_name으로 MongoDB 문서 업데이트
 
 [주요 처리 로직]
 1. MongoDB 연결 및 데이터 검색
-2. Gemini API를 사용한 이름 정제
+2. OpenAI GPT-4o-mini API를 사용한 이름 정제
 3. MongoDB 데이터 업데이트
 '''
 
 import os
 import time
 import sys
-import google.generativeai as genai  # Google Generative AI 라이브러리
+import openai  # OpenAI 라이브러리로 변경
 from pymongo import MongoClient
 from pymongo.server_api import ServerApi
 from dotenv import load_dotenv
@@ -26,20 +26,17 @@ from dotenv import load_dotenv
 load_dotenv()
 
 def extract_clean_name(display_name):
-    """Gemini API를 사용하여 표시된 이름에서 대표 닉네임/이름 추출"""
+    """OpenAI GPT-4o-mini API를 사용하여 표시된 이름에서 대표 닉네임/이름 추출"""
     try:
         retry_count = 0
         retry_delay = 15  # 고정 15초 대기
         
         while True:  # 무한 재시도
             try:
-                print(f"\nGemini API에 이름 추출 요청 중... (입력: {display_name})")
+                print(f"\nGPT-4o-mini API에 이름 추출 요청 중... (입력: {display_name})")
                 
-                # Gemini API 설정
-                genai.configure(api_key=os.getenv('GOOGLE_API_KEY'))
-                
-                # 모델 설정
-                model = genai.GenerativeModel('gemini-2.0-flash')
+                # OpenAI API 설정
+                client = openai.OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
                 
                 prompt = f"""다음 인스타그램 프로필 이름에서 가장 적절한 대표 닉네임을 추출해주세요:
                 
@@ -84,24 +81,19 @@ def extract_clean_name(display_name):
                 입력: "마로마트 | 다이어트먹트 이채은"
                 출력: 마로마트"""
 
-                
-
-                # 시스템 프롬프트를 포함한 채팅 생성
-                response = model.generate_content(
-                    contents=[
-                        {
-                            "role": "user",
-                            "parts": [prompt]
-                        }
+                # API 호출 (gpt-4o-mini 모델 사용)
+                response = client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[
+                        {"role": "system", "content": "당신은 프로필 이름에서 올바른 닉네임이나 대표 이름을 추출하는 전문가입니다."},
+                        {"role": "user", "content": prompt}
                     ],
-                    generation_config={
-                        "temperature": 0,
-                        "max_output_tokens": 50,
-                    }
+                    temperature=0,
+                    max_tokens=50,
                 )
                 
                 # 응답에서 텍스트 추출
-                clean_name = response.text.strip()
+                clean_name = response.choices[0].message.content.strip()
                 
                 print(f"full_name: {display_name}")
                 print(f"clean_name: {clean_name}")
@@ -110,7 +102,7 @@ def extract_clean_name(display_name):
                 
             except Exception as e:
                 retry_count += 1
-                print(f"\nGemini API 호출 {retry_count}번째 시도 실패: {str(e)}")
+                print(f"\nGPT-4o-mini API 호출 {retry_count}번째 시도 실패: {str(e)}")
                 print(f"[{retry_count}] INFO: 재시도까지 15초 대기 중...")
                 time.sleep(retry_delay)  # 항상 15초 대기
                 
@@ -232,9 +224,9 @@ def main():
             except Exception as e:
                 retry_count += 1
                 timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
-                print(f"\n[{timestamp}] ERROR: Gemini API 호출 {retry_count}번째 시도 실패: {str(e)}")
+                print(f"\n[{timestamp}] ERROR: GPT-4o-mini API 호출 {retry_count}번째 시도 실패: {str(e)}")
                 print(f"[{timestamp}] INFO: 재시도까지 15초 대기 중...")
-                log_file.write(f"[{timestamp}] ERROR: Gemini API 호출 {retry_count}번째 시도 실패: {str(e)}\n")
+                log_file.write(f"[{timestamp}] ERROR: GPT-4o-mini API 호출 {retry_count}번째 시도 실패: {str(e)}\n")
                 log_file.write(f"[{timestamp}] INFO: 재시도까지 15초 대기 중...\n")
                 log_file.flush()
                 time.sleep(15)  # API 호출 실패 시에만 15초 대기
