@@ -92,7 +92,7 @@
    - 상품명, 브랜드명 추출
    - 공구 시작일/종료일 추출
 3. Gemini AI를 사용하여:
-   - 각 게시물 2회 분석 후 최적 결과 선택
+   - 각 게시물 1회 분석 후 결과 선택
    - 상품 카테고리 및 서브 카테고리 분류
 4. OpenAI API를 사용한 상품 유사도 측정:
    - 20일 이내 유사 상품 중복 체크
@@ -130,7 +130,7 @@
    - 70% 이상 유사도 시 중복으로 판단
 
 5. 카테고리 분류:
-   - Gemini API를 통한 상품 카테고리 자동 분류
+   - OpenAI를 사용하여 상품 카테고리 분석
    - 주 카테고리(이모지 포함)와 서브 카테고리 구분
    - 주방용품, 생활용품, 식품, 뷰티, 유아, 의류, 전자제품 등 분류
 
@@ -169,7 +169,6 @@ import os
 from dotenv import load_dotenv
 from pymongo import MongoClient
 from pymongo.server_api import ServerApi
-import google.generativeai as genai  # 제미나이 API 추가
 import re
 import openai
 from jellyfish import jaro_winkler_similarity
@@ -189,9 +188,9 @@ def get_mongodb_connection():
         
         # 컬렉션 매핑
         collections = {
-            'feeds': db['01_test_newfeed_crawl_data'],
-            'influencers': db['02_test_influencer_data'],
-            'brands': db['08_test_brand_category_data']
+            'feeds': db['01_main_newfeed_crawl_data'],
+            'influencers': db['02_main_influencer_data'],
+            'brands': db['08_main_brand_category_data']
         }
         
         return client, collections
@@ -445,7 +444,7 @@ def calculate_similarity(item1, item2, log_dir=None):
 
 def analyze_product_category(product_name):
     """
-    제미나이 API를 사용하여 상품명을 분석하고 적합한 카테고리를 반환합니다.
+    OpenAI GPT 모델을 사용하여 상품명을 분석하고 적합한 카테고리를 반환합니다.
     
     Args:
         product_name (str): 분석할 상품명
@@ -453,162 +452,164 @@ def analyze_product_category(product_name):
     Returns:
         tuple: (주 카테고리, 서브 카테고리)
     """
-    try:
-        # 제미나이 API 키 설정
-        genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
-        
-        # 카테고리 정의
-        categories = """
-        🍽주방용품&식기
-        도마,조리도구,식기세트 - 도마, 칼, 조리도구, 그릇, 접시, 컵, 수저, 식기세트
-        냄비&프라이팬 - 냄비, 프라이팬, 웍, 찜기, 압력솥, 뚝배기
-        주방가전 - 에어프라이어, 오븐, 토스터, 블렌더, 믹서기, 전기포트, 커피머신
-        밀폐/보관 용기 - 밀폐용기, 보관용기, 유리용기, 스테인리스 용기, 진공용기
-        기타 - 분류가 안된 것
+    retry_count = 0
+    retry_delay = 10  # 초기 대기 시간
 
-        🛋생활용품&가전
-        청소기&세척기 - 청소기, 로봇청소기, 핸디청소기, 스팀청소기, 세척기
-        세탁/욕실용품 - 세제, 섬유유연제, 세탁세제, 주방세제, 고무장갑, 욕실용품, 수건
-        조명&가구 - 조명, 스탠드, 책상, 의자, 침대, 소파, 테이블, 수납장
-        침구&커튼 - 이불, 베개, 침대패드, 매트리스, 커튼, 블라인드, 러그, 카페트
-        구강케어 - 치약, 칫솔, 구강세정제, 치실, 구강스프레이
-        기타 - 분류가 안된 것
-        
-        🥦식품&건강식품
-        건강음료&차 - 차, 건강음료, 콤부차, 식혜, 수제청, 과일청, 식초
-        간편식&조미료 - 간편식, 즉석식품, 소스, 조미료, 양념, 곰탕, 국, 찌개
-        스낵&간식 - 과자, 쿠키, 초콜릿, 젤리, 견과류, 그래놀라, 시리얼
-        축산&수산물 - 육류, 해산물, 생선, 계란, 우유, 치즈, 요거트
-        과일&신선식품 - 과일, 채소, 샐러드, 나물, 버섯
-        건강보조제 - 비타민, 영양제, 프로바이오틱스, 콜라겐, 단백질 보충제
-        기타 - 분류가 안된 것
-
-        🧴뷰티&헬스
-        헤어&바디 - 샴푸, 트리트먼트, 바디워시, 바디로션, 핸드크림, 바디스크럽
-        스킨케어&화장품 - 스킨, 로션, 에센스, 크림, 마스크팩, 선크림, 메이크업
-        헬스&피트니스 - 운동기구, 요가매트, 덤벨, 보조제, 프로틴, 다이어트식품
-        기타 - 분류가 안된 것
-
-        👶유아&교육
-        유아가구 & 침구 - 유아침대, 유아책상, 유아의자, 유아이불, 유아베개
-        교육&완구 - 책, 교구, 장난감, 퍼즐, 블록, 보드게임, 인형
-        기타 - 분류가 안된 것
-
-        👗의류&잡화
-        의류&신발 - 옷, 의류, 패딩, 코트, 자켓, 티셔츠, 바지, 신발, 슬리퍼
-        가방&액세서리 - 가방, 백팩, 지갑, 벨트, 모자, 스카프, 목걸이, 귀걸이
-        기타 - 분류가 안된 것
-
-        🚗기타
-        전자기기 - TV, 스피커, 이어폰, 헤드폰, 충전기, 노트북, 태블릿
-        기타 - 분류가 안된 것
-        """
-        
-        # 제미나이 모델 생성 및 생성 구성 설정
-        model = genai.GenerativeModel('gemini-2.0-flash')
-        
-        # 생성 구성 설정
-        generation_config = {
-            "temperature": 0.0,  # 완전히 결정적인 응답 생성 (항상 동일한 결과)
-            "top_p": 0.95,       # 누적 확률 기준으로 토큰 선택 범위 제한 (0.95 = 상위 95% 확률 내 토큰만 고려)
-            "top_k": 40,         # 각 단계에서 고려할 최상위 토큰 수 (다양성과 품질의 균형)
-            "max_output_tokens": 200,  # 생성할 최대 토큰 수 제한 (응답 길이 제한)
-        }
-        
-        # 프롬프트 작성
-        prompt = f"""
-        당신은 상품 카테고리 분류 전문가입니다. 정확하고 일관된 카테고리 분류가 당신의 주요 업무입니다.
-        
-        다음 상품명을 분석하여 가장 적합한 카테고리와 서브카테고리를 선택해주세요:
-        
-        상품명: {product_name}
-        
-        다음 카테고리 목록에서만 선택하세요:
-        {categories}
-        
-        분류 규칙:
-        1. 상품의 주요 기능과 용도를 기준으로 분류하세요.
-        2. 여러 카테고리에 걸쳐있는 상품은 주된 용도를 기준으로 분류하세요.
-        3. 브랜드명은 무시하고 상품 자체의 특성으로만 판단하세요.
-        4. 상품명만으로 분류가 어렵거나 카테고리 목록에 명확히 포함되지 않는 경우 '기타' 카테고리를 사용하세요.
-        5. 식품 관련 상품은 최대한 구체적인 식품 서브카테고리로 분류하세요.
-        6. 분류가 안된다면 기타로 분류하세요.
-        
-        주 카테고리는 이모지가 포함된 대분류(예: 🍽주방용품&식기)를 선택하고,
-        서브 카테고리는 해당 주 카테고리 아래의 소분류(예: 도마,조리도구,식기세트)를 선택하세요.
-        
-        예시:
-        1. "트리쳐도마+진공밧드세트" → 🍽주방용품&식기 / 도마,조리도구,식기세트
-        2. "프리미엄 니트릴 고무장갑" → 🛋생활용품&가전 / 세탁/욕실용품
-        3. "포빙이불 (고밀도 모달/면 차렵이불, 침대패드, 베개커버)" → 🛋생활용품&가전 / 침구&커튼
-        4. "세탁세제, 섬유유연제, 주방세제" → 🛋생활용품&가전 / 세탁/욕실용품
-        5. "화장품 3종세트" → 🧴뷰티&헬스 / 스킨케어&화장품
-        6. "클린톡 과일야채 주스" → 🥦식품&건강식품 / 건강음료&차
-        7. "유기농 견과류 선물세트" → 🥦식품&건강식품 / 스낵&간식
-        8. "한우 선물세트" → 🥦식품&건강식품 / 축산&수산물
-        9. "멀티비타민" → 🥦식품&건강식품 / 건강보조제
-        10. "요가매트와 덤벨 세트" → 🧴뷰티&헬스 / 헬스&피트니스
-        11. "다용도 선물세트(여러 카테고리 상품 혼합)" → 🚗기타&전자제품 / 기타
-        12. "유기농 엑스트라 버진 올리브 오일" → 🥦식품&건강식품 / 간편식&조미료
-        
-        응답 형식:
-        {{
-          "main_category": "이모지와 함께 주 카테고리명",
-          "sub_category": "서브 카테고리명"
-        }}
-        
-        JSON 형식으로만 응답해주세요. 예시 응답:
-        {{
-          "main_category": "🍽주방용품&식기",
-          "sub_category": "도마,조리도구,식기세트"
-        }}
-        """
-        
-        # 제미나이 API 호출 (생성 구성 적용)
-        response = model.generate_content(
-            prompt,
-            generation_config=generation_config
-        )
-        
-        # 응답 파싱
+    while True:  # 무한 루프 유지
         try:
-            result = json.loads(response.text)
-            return result["main_category"], result["sub_category"]
-        except json.JSONDecodeError:
-            # JSON 파싱 실패 시 텍스트에서 정보 추출 시도
-            text = response.text
-            main_match = re.search(r'"main_category":\s*"([^"]+)"', text)
-            sub_match = re.search(r'"sub_category":\s*"([^"]+)"', text)
+            # OpenAI 클라이언트 초기화
+            client = openai.OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
             
-            if main_match and sub_match:
-                return main_match.group(1), sub_match.group(1)
-            else:
-                print("응답에서 카테고리 정보를 추출할 수 없습니다.")
-                return "", ""
+            # 카테고리 정의
+            categories = """
+            🍽주방용품&식기
+            도마,조리도구,식기세트 - 도마, 칼, 조리도구, 그릇, 접시, 컵, 수저, 식기세트
+            냄비&프라이팬 - 냄비, 프라이팬, 웍, 찜기, 압력솥, 뚝배기
+            주방가전 - 에어프라이어, 오븐, 토스터, 블렌더, 믹서기, 전기포트, 커피머신
+            밀폐/보관 용기 - 밀폐용기, 보관용기, 유리용기, 스테인리스 용기, 진공용기
+            기타 - 분류가 안된 것
+
+            🛋생활용품&가전
+            청소기&세척기 - 청소기, 로봇청소기, 핸디청소기, 스팀청소기, 세척기
+            세탁/욕실용품 - 세제, 섬유유연제, 세탁세제, 주방세제, 고무장갑, 욕실용품, 수건
+            조명&가구 - 조명, 스탠드, 책상, 의자, 침대, 소파, 테이블, 수납장
+            침구&커튼 - 이불, 베개, 침대패드, 매트리스, 커튼, 블라인드, 러그, 카페트
+            구강케어 - 치약, 칫솔, 구강세정제, 치실, 구강스프레이
+            기타 - 분류가 안된 것
+            
+            🥦식품&건강식품
+            건강음료&차 - 차, 건강음료, 콤부차, 식혜, 수제청, 과일청, 식초
+            간편식&조미료 - 간편식, 즉석식품, 소스, 조미료, 양념, 곰탕, 국, 찌개
+            스낵&간식 - 과자, 쿠키, 초콜릿, 젤리, 견과류, 그래놀라, 시리얼
+            축산&수산물 - 육류, 해산물, 생선, 계란, 우유, 치즈, 요거트
+            과일&신선식품 - 과일, 채소, 샐러드, 나물, 버섯
+            건강보조제 - 비타민, 영양제, 프로바이오틱스, 콜라겐, 단백질 보충제
+            기타 - 분류가 안된 것
+
+            🧴뷰티&헬스
+            헤어&바디 - 샴푸, 트리트먼트, 바디워시, 바디로션, 핸드크림, 바디스크럽
+            스킨케어&화장품 - 스킨, 로션, 에센스, 크림, 마스크팩, 선크림, 메이크업
+            헬스&피트니스 - 운동기구, 요가매트, 덤벨, 보조제, 프로틴, 다이어트식품
+            기타 - 분류가 안된 것
+
+            👶유아&교육
+            유아가구 & 침구 - 유아침대, 유아책상, 유아의자, 유아이불, 유아베개
+            교육&완구 - 책, 교구, 장난감, 퍼즐, 블록, 보드게임, 인형
+            기타 - 분류가 안된 것
+
+            👗의류&잡화
+            의류&신발 - 옷, 의류, 패딩, 코트, 자켓, 티셔츠, 바지, 신발, 슬리퍼
+            가방&액세서리 - 가방, 백팩, 지갑, 벨트, 모자, 스카프, 목걸이, 귀걸이
+            기타 - 분류가 안된 것
+
+            🚗기타
+            전자기기 - TV, 스피커, 이어폰, 헤드폰, 충전기, 노트북, 태블릿
+            기타 - 분류가 안된 것
+            """
+            
+            # 프롬프트 작성
+            prompt = f"""
+            당신은 상품 카테고리 분류 전문가입니다. 정확하고 일관된 카테고리 분류가 당신의 주요 업무입니다.
+            
+            다음 상품명을 분석하여 가장 적합한 카테고리와 서브카테고리를 선택해주세요:
+            
+            상품명: {product_name}
+            
+            다음 카테고리 목록에서만 선택하세요:
+            {categories}
+            
+            분류 규칙:
+            1. 상품의 주요 기능과 용도를 기준으로 분류하세요.
+            2. 여러 카테고리에 걸쳐있는 상품은 주된 용도를 기준으로 분류하세요.
+            3. 브랜드명은 무시하고 상품 자체의 특성으로만 판단하세요.
+            4. 상품명만으로 분류가 어렵거나 카테고리 목록에 명확히 포함되지 않는 경우 '기타' 카테고리를 사용하세요.
+            5. 식품 관련 상품은 최대한 구체적인 식품 서브카테고리로 분류하세요.
+            6. 분류가 안된다면 기타로 분류하세요.
+            
+            주 카테고리는 이모지가 포함된 대분류(예: 🍽주방용품&식기)를 선택하고,
+            서브 카테고리는 해당 주 카테고리 아래의 소분류(예: 도마,조리도구,식기세트)를 선택하세요.
+            
+            예시:
+            1. "트리쳐도마+진공밧드세트" → 🍽주방용품&식기 / 도마,조리도구,식기세트
+            2. "프리미엄 니트릴 고무장갑" → 🛋생활용품&가전 / 세탁/욕실용품
+            3. "포빙이불 (고밀도 모달/면 차렵이불, 침대패드, 베개커버)" → 🛋생활용품&가전 / 침구&커튼
+            4. "세탁세제, 섬유유연제, 주방세제" → 🛋생활용품&가전 / 세탁/욕실용품
+            5. "화장품 3종세트" → 🧴뷰티&헬스 / 스킨케어&화장품
+            6. "클린톡 과일야채 주스" → 🥦식품&건강식품 / 건강음료&차
+            7. "유기농 견과류 선물세트" → 🥦식품&건강식품 / 스낵&간식
+            8. "한우 선물세트" → 🥦식품&건강식품 / 축산&수산물
+            9. "멀티비타민" → 🥦식품&건강식품 / 건강보조제
+            10. "요가매트와 덤벨 세트" → 🧴뷰티&헬스 / 헬스&피트니스
+            11. "다용도 선물세트(여러 카테고리 상품 혼합)" → 🚗기타&전자제품 / 기타
+            12. "유기농 엑스트라 버진 올리브 오일" → 🥦식품&건강식품 / 간편식&조미료
+            
+            응답 형식:
+            {{
+            "main_category": "이모지와 함께 주 카테고리명",
+            "sub_category": "서브 카테고리명"
+            }}
+            
+            JSON 형식으로만 응답해주세요. 예시 응답:
+            {{
+            "main_category": "🍽주방용품&식기",
+            "sub_category": "도마,조리도구,식기세트"
+            }}
+            """
+            
+            # OpenAI API 호출
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "당신은 상품 카테고리 분류 전문가입니다. 정확하고 일관된 카테고리 분류가 당신의 주요 업무입니다."},
+                    {"role": "user", "content": prompt}
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.2
+            )
+            
+            # 응답 파싱 - response.text 대신 올바른 속성 사용
+            try:
+                result = json.loads(response.choices[0].message.content)
+                return result["main_category"], result["sub_category"]
+            except json.JSONDecodeError:
+                # JSON 파싱 실패 시 텍스트에서 정보 추출 시도
+                text = response.choices[0].message.content
+                main_match = re.search(r'"main_category":\s*"([^"]+)"', text)
+                sub_match = re.search(r'"sub_category":\s*"([^"]+)"', text)
+                
+                if main_match and sub_match:
+                    return main_match.group(1), sub_match.group(1)
+                else:
+                    print("응답에서 카테고리 정보를 추출할 수 없습니다.")
+                    return "", ""
     
-    except Exception as e:
-        print(f"제미나이 API 호출 중 오류 발생: {str(e)}")
-        return "", ""  # 오류 발생 시 빈 문자열 반환
+        except Exception as e:
+            # API 할당량 초과 시 재시도 로직 추가
+            if "429" in str(e):  # Resource exhausted 에러 코드
+                retry_count += 1
+                print(f"OpenAI API 할당량 초과. {retry_delay}초 후 재시도... (시도 {retry_count}번째)")
+                time.sleep(retry_delay)  # retry_delay 변수 사용
+                continue  # 루프 처음으로 돌아가 재시도
+            else:
+                # 다른 종류의 오류는 기존처럼 처리
+                print(f"OpenAI API 호출 중 오류 발생: {str(e)}")
+                return "", ""  # 오류 발생 시 빈 문자열 반환
 
 def analyze_instagram_feed():
     try:
         # 환경 변수에서 API 키 로드
         load_dotenv()
         
-        # Gemini API 설정
-        genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
+        # OpenAI API 설정 (Gemini 대신 GPT-4o-mini 사용)
+        openai.api_key = os.getenv('OPENAI_API_KEY')
+        client = openai.OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
         
         # MongoDB 연결
         mongo_client, collections = get_mongodb_connection()
         feeds_collection = collections['feeds']
         
-        # 처리되지 않은 피드 데이터 조회
-        unprocessed_feeds = feeds_collection.find({
-            '$or': [
-                {'processed': False},
-                {'processed': {'$exists': False}}
-            ]
-        })
+        # 처리되지 않은 피드 데이터 조회 (페이지네이션 방식으로 변경)
+        batch_size = 50  # 한 번에 처리할 문서 수
         total_feeds = feeds_collection.count_documents({
             '$or': [
                 {'processed': False},
@@ -618,381 +619,298 @@ def analyze_instagram_feed():
         
         print(f"총 {total_feeds}개의 게시글을 분석합니다...")
         
-        # 각 게시글 분석
-        for i, item in enumerate(unprocessed_feeds, start=1):
-            print(f"\n[{i}/{total_feeds}] {i}번 게시글 분석 중...")
+        processed_count = 0
+        last_id = None
+        
+        while processed_count < total_feeds:
+            # ID 기반 페이지네이션 쿼리
+            query = {
+                '$or': [
+                    {'processed': False},
+                    {'processed': {'$exists': False}}
+                ]
+            }
             
-            try:
-                # API 할당량 초과 시 재시도 로직
-                retry_count = 0
-                wait_time = 10  # 초기 대기 시간 10초
+            if last_id:
+                query['_id'] = {'$gt': last_id}
                 
-                while True:  # 무한 루프로 변경
-                    try:
-                        # 이미 처리된 데이터 체크 로직
-                        if item.get('09_feed'):
-                            print(f"{i}번 게시글: 이미 처리된 데이터입니다. 건너뜁니다.")
-                            feeds_collection.update_one(
-                                {'_id': item['_id']},
-                                {'$set': {'processed': True}}
-                            )
-                            break  # 처리 완료 시 루프 종료
+            # 배치 크기만큼만 조회
+            batch = list(feeds_collection.find(query).sort('_id', 1).limit(batch_size))
+            
+            if not batch:
+                break  # 더 이상 처리할 문서가 없음
+                
+            for i, item in enumerate(batch, start=processed_count+1):
+                print(f"\n[{i}/{total_feeds}] {i}번 게시글 분석 중...")
+                last_id = item['_id']  # 마지막 ID 저장
+                
+                try:
+                    # API 할당량 초과 시 재시도 로직
+                    retry_count = 0
+                    wait_time = 10  # 초기 대기 시간 10초
+                    
+                    while True:  # 무한 루프로 변경
+                        try:
+                            # 이미 처리된 데이터 체크 로직
+                            if item.get('09_feed'):
+                                print(f"{i}번 게시글: 이미 처리된 데이터입니다. 건너뜁니다.")
+                                feeds_collection.update_one(
+                                    {'_id': item['_id']},
+                                    {'$set': {'processed': True}}
+                                )
+                                break  # 처리 완료 시 루프 종료
 
-                        # 본문 내용 확인
-                        content = item.get('content')
-                        author = item.get('author')
+                            # 본문 내용 확인
+                            content = item.get('content')
+                            author = item.get('author')
 
-                        if not content or not content.strip():
-                            if not author:  # author도 비어있는 경우
-                                print(f"본문 내용과 작성자가 비어있어 삭제합니다. (게시물 링크: {item['post_url']})")
-                                feeds_collection.delete_one({'_id': item['_id']})  # 도큐먼트 삭제
-                            else:
-                                print(f"본문 내용이 비어있습니다. (작성자: {author}, 게시물 링크: {item['post_url']})")
+                            if not content or not content.strip():
+                                if not author:  # author도 비어있는 경우
+                                    print(f"본문 내용과 작성자가 비어있어 삭제합니다. (게시물 링크: {item['post_url']})")
+                                    feeds_collection.delete_one({'_id': item['_id']})  # 도큐먼트 삭제
+                                else:
+                                    print(f"본문 내용이 비어있습니다. (작성자: {author}, 게시물 링크: {item['post_url']})")
+                                
+                                # 게시글 처리 상태 업데이트
+                                feeds_collection.update_one(
+                                    {'_id': item['_id']},
+                                    {'$set': {'processed': True}}  # 처리 완료로 설정
+                                )
+                                break  # 다음 게시물로 넘어감
                             
-                            # 게시글 처리 상태 업데이트
-                            feeds_collection.update_one(
-                                {'_id': item['_id']},
-                                {'$set': {'processed': True}}  # 처리 완료로 설정
-                            )
-                            break  # 다음 게시물로 넘어감
-                        
-                        print(f"{i}번 게시글: Gemini 분석 요청 중...")
-                        
-                        # Gemini 모델 생성 및 생성 구성 설정
-                        model = genai.GenerativeModel('gemini-2.0-flash')
-                        
-                        # 생성 구성 설정
-                        generation_config = {
-                            "temperature": 0.2,
-                            "top_p": 0.95,
-                            "top_k": 40,
-                            "max_output_tokens": 500,
-                        }
-                        
-                        # 프롬프트 작성
-                        prompt = f"""
-                        You are analyzing Instagram feed content. Extract information and respond in the following JSON format only:
-                        {{
-                            "is_group_buy": "공구예고"/"공구오픈"/"공구리마인드"/"확인필요"/"N",
-                            "product_name": "Include all main product categories in the title",
-                            "brand_name": "brand name here",
-                            "start_date": "MM-DD format only if year is not specified",
-                            "end_date": "MM-DD format only if year is not specified"
-                        }}
-                        
-                        For group buy classification:
-                        - "공구예고": Post announces future group buy with specific future date
-                        - "공구오픈": Post announces group buy opening today or is currently open
-                        - "공구리마인드": Post reminds of ongoing group buy or last call
-                        - "확인필요": Unclear whether it's a group buy or needs verification
-                        - "N": Not a group buy post
-                        
-                        Important indicators:
-                        - 공구예고: "곧 오픈", "오픈 예정", "Coming soon", "준비중"
-                        - 공구오픈: "OPEN", "오픈", "𝑶𝑷𝑬𝑵", "open", "시작", "오픈했어요"
-                        - 공구리마인드: "마감임박", "오늘마감", "마지막", "재고 얼마없어요"
-                        
-                        For dates:
-                        - If year is not specified in the content, only extract MM-DD
-                        - If post mentions "OPEN", "오픈", "𝑶𝑷𝑬𝑵", "open" without specific date, mark as "당일"
-                        - For shipping dates (e.g., "2/7일부터 순차 발송"), use post date as start_date
-                        - Do not assume or add any year information
-                        - Return empty string if no date is found
-                        
-                        Important indicators for group buy (공구):
-                        - Keywords like "OPEN", "오픈", "𝑶𝑷𝑬𝑵", "open"
-                        - "프로필 링크에서 구매"
-                        - Detailed product information with pricing
-                        - Limited time offer implications
-                        - Comment inducement for purchase intention
-                        - Specific purchase instructions or links
-                        
-                        Return "확인필요" when:
-                        - Post contains some group buy indicators but lacks crucial information
-                        - Unclear whether it's a product review or group buy
-                        - Contains purchase-related keywords but no clear group buy format
+                            print(f"{i}번 게시글: GPT-4o-mini 분석 요청 중...")
+                            
+                            # 프롬프트 작성
+                            prompt = f"""
+                            You are analyzing Instagram feed content. Extract information and respond in the following JSON format only:
+                            {{
+                                "is_group_buy": "공구예고"/"공구오픈"/"공구리마인드"/"확인필요"/"N",
+                                "product_name": "Include all main product categories in the title",
+                                "brand_name": "brand name here",
+                                "start_date": "MM-DD format only if year is not specified",
+                                "end_date": "MM-DD format only if year is not specified"
+                            }}
+                            
+                            For group buy classification:
+                            - "공구예고": Post announces future group buy with specific future date
+                            - "공구오픈": Post announces group buy opening today or is currently open
+                            - "공구리마인드": Post reminds of ongoing group buy or last call
+                            - "확인필요": Unclear whether it's a group buy or needs verification
+                            - "N": Not a group buy post
+                            
+                            Important indicators:
+                            - 공구예고: "곧 오픈", "오픈 예정", "Coming soon", "준비중"
+                            - 공구오픈: "OPEN", "오픈", "𝑶𝑷𝑬𝑵", "open", "시작", "오픈했어요"
+                            - 공구리마인드: "마감임박", "오늘마감", "마지막", "재고 얼마없어요"
+                            
+                            For dates:
+                            - If year is not specified in the content, only extract MM-DD
+                            - If post mentions "OPEN", "오픈", "𝑶𝑷𝑬𝑵", "open" without specific date, mark as "당일"
+                            - For shipping dates (e.g., "2/7일부터 순차 발송"), use post date as start_date
+                            - Do not assume or add any year information
+                            - Return empty string if no date is found
+                            
+                            Important indicators for group buy (공구):
+                            - Keywords like "OPEN", "오픈", "𝑶𝑷𝑬𝑵", "open"
+                            - "프로필 링크에서 구매"
+                            - Detailed product information with pricing
+                            - Limited time offer implications
+                            - Comment inducement for purchase intention
+                            - Specific purchase instructions or links
+                            
+                            Return "확인필요" when:
+                            - Post contains some group buy indicators but lacks crucial information
+                            - Unclear whether it's a product review or group buy
+                            - Contains purchase-related keywords but no clear group buy format
 
-                        For dates:
-                        - If year is not specified in the content, only extract MM-DD
-                        - If post mentions "OPEN" without specific date, mark as "당일"
-                        - Do not assume or add any year information
-                        - Return empty string if no date is found
-                     
-                        
-                        Do not include any other text in your response.
+                            For dates:
+                            - If year is not specified in the content, only extract MM-DD
+                            - If post mentions "OPEN" without specific date, mark as "당일"
+                            - Do not assume or add any year information
+                            - Return empty string if no date is found
+                         
+                            
+                            Do not include any other text in your response.
 
-                        Analyze the following Instagram post content:
-                        {content}
-                        """
-                        
-                        # 두 번의 분석 수행
-                        results = []
-                        for attempt in range(2):
-                            response = model.generate_content(
-                                prompt,
-                                generation_config=generation_config
+                            Analyze the following Instagram post content:
+                            {content}
+                            """
+                            
+                            # GPT-4o-mini API 호출
+                            response = client.chat.completions.create(
+                                model="gpt-4o-mini",
+                                messages=[
+                                    {"role": "system", "content": "You are a content analyzer specializing in Instagram posts."},
+                                    {"role": "user", "content": prompt}
+                                ],
+                                response_format={"type": "json_object"},
+                                temperature=0.2
                             )
                             
                             try:
-                                parsed_result = json.loads(response.text)
-                                results.append(parsed_result)
+                                result = json.loads(response.choices[0].message.content)
                             except json.JSONDecodeError:
-                                text = response.text
+                                text = response.choices[0].message.content
                                 json_match = re.search(r'({.*})', text.replace('\n', ''), re.DOTALL)
                                 if json_match:
                                     try:
-                                        parsed_result = json.loads(json_match.group(1))
-                                        results.append(parsed_result)
+                                        result = json.loads(json_match.group(1))
                                     except:
-                                        results.append({
+                                        result = {
                                             "is_group_buy": "확인필요",
                                             "product_name": "",
                                             "brand_name": "",
                                             "start_date": "",
                                             "end_date": ""
-                                        })
+                                        }
                                 else:
-                                    results.append({
+                                    result = {
                                         "is_group_buy": "확인필요",
                                         "product_name": "",
                                         "brand_name": "",
                                         "start_date": "",
                                         "end_date": ""
-                                    })
+                                    }
 
-                        # 결과 비교 및 최적 결과 선택
-                        if len(results) == 2:
-                            result = compare_and_select_best_result(results[0], results[1])
-                            print(f"{i}번 게시글: 두 분석 결과 비교 후 최종 선택")
-                        else:
-                            result = results[0]
-                            print(f"{i}번 게시글: 단일 분석 결과 사용")
-
-                        # '당일' 처리
-                        if result['start_date'] == '당일':
-                            date_parts = item['cr_at'].split('T')[0].split('-')
-                            result['start_date'] = f"{date_parts[1]}-{date_parts[2]}"
+                            print(f"{i}번 게시글: 분석 결과 사용")
                             
-                        if result['end_date'] == '당일':
-                            date_parts = item['cr_at'].split('T')[0].split('-')
-                            result['end_date'] = f"{date_parts[1]}-{date_parts[2]}"
-
-                        # 브랜드명이 비어있고 상품명이 있는 경우 '확인필요'로 설정
-                        if not result['brand_name'] and result['product_name']:
-                            result['brand_name'] = '확인필요'
-
-                        # Gemini 응답 출력
-                        print(f"{i}번 게시글: Gemini 응답 내용: {json.dumps(result, ensure_ascii=False, indent=4)} (작성자: {item['author']}, 게시물 링크: {item['post_url']})")
-                        
-                        # 날짜 형식 검증 및 정리 함수
-                        def validate_date(date_str, created_date=None):
-                            if not date_str or date_str.strip() == '':
-                                return ''
-                            try:
-                                if date_str == '당일' and created_date:
-                                    # created_date에서 월-일만 추출 (MM-DD 형식)
-                                    date_parts = created_date.split('T')[0].split('-')
-                                    return f"{date_parts[1]}-{date_parts[2]}"
+                            # '당일' 처리
+                            if result['start_date'] == '당일':
+                                date_parts = item['cr_at'].split('T')[0].split('-')
+                                result['start_date'] = f"{date_parts[1]}-{date_parts[2]}"
                                 
-                                # MM-DD 형식을 처리
-                                date_str = date_str.replace('/', '-').replace('.', '-')
-                                parts = date_str.split('-')
-                                
-                                if len(parts) == 2:
-                                    # created_date에서 연도 추출
-                                    year = created_date.split('T')[0].split('-')[0] if created_date else "2024"
-                                    month = parts[0].zfill(2)
-                                    day = parts[1].zfill(2)
-                                    return f"{year}-{month}-{day}"
-                                elif len(parts) == 3:
-                                    year = parts[0]
-                                    if len(year) == 2:
-                                        year = f"20{year}"
-                                    month = parts[1].zfill(2)
-                                    day = parts[2].zfill(2)
-                                    return f"{year}-{month}-{day}"
-                                return ''
-                            except:
-                                return ''
+                            if result['end_date'] == '당일':
+                                date_parts = item['cr_at'].split('T')[0].split('-')
+                                result['end_date'] = f"{date_parts[1]}-{date_parts[2]}"
 
-                        # 날짜 검증 및 처리
-                        created_date = item.get('cr_at')
-                        
-                        update_data = {}
-                        
-                        if result['is_group_buy'] in ['공구예고', '공구오픈', '공구리마인드']:
-                            # 시작일 처리 - 이제 '당일' 처리는 위에서 완료됨
-                            start_date = validate_date(str(result['start_date']), created_date)
-                            end_date = validate_date(str(result['end_date']), created_date)
+                            # 브랜드명이 비어있고 상품명이 있는 경우 '확인필요'로 설정
+                            if not result['brand_name'] and result['product_name']:
+                                result['brand_name'] = '확인필요'
+
+                            # GPT-4o-mini 응답 출력
+                            print(f"{i}번 게시글: GPT-4o-mini 응답 내용: {json.dumps(result, ensure_ascii=False, indent=4)} (작성자: {item['author']}, 게시물 링크: {item['post_url']})")
                             
-                            # 브랜드명 정규화 처리 추가
-                            normalized_brand = normalize_brand(result['brand_name'], collections['brands'], item['author'])
-                            
-                            update_data = {
-                                '09_feed': result['is_group_buy'],
-                                '09_item': str(result['product_name']),
-                                '09_brand': str(normalized_brand['name']),  # 정규화된 브랜드명 사용
-                                'open_date': start_date,
-                                'end_date': end_date,
-                                '09_item_category': '',
-                                '09_item_category_2': '',
-                                'processed': True
-                            }
-                            
-                            # 제미나이 API를 사용하여 카테고리 분석
-                            if result['product_name']:
+                            # 날짜 형식 검증 및 정리 함수
+                            def validate_date(date_str, created_date=None):
+                                if not date_str or date_str.strip() == '':
+                                    return ''
                                 try:
-                                    item_category, item_category2 = analyze_product_category(result['product_name'])
-                                    update_data['09_item_category'] = item_category
-                                    update_data['09_item_category_2'] = item_category2
+                                    if date_str == '당일' and created_date:
+                                        # created_date에서 월-일만 추출 (MM-DD 형식)
+                                        date_parts = created_date.split('T')[0].split('-')
+                                        return f"{date_parts[1]}-{date_parts[2]}"
                                     
-                                    # 카테고리 분석 결과 출력
-                                    print(f"{i}번 게시글: 카테고리 분석 결과 - 주 카테고리: {item_category}, 서브 카테고리: {item_category2}")
-                                except Exception as e:
-                                    print(f"카테고리 분석 중 오류 발생: {str(e)}")
+                                    # MM-DD 형식을 처리
+                                    date_str = date_str.replace('/', '-').replace('.', '-')
+                                    parts = date_str.split('-')
+                                    
+                                    if len(parts) == 2:
+                                        # created_date에서 연도 추출
+                                        year = created_date.split('T')[0].split('-')[0] if created_date else "2024"
+                                        month = parts[0].zfill(2)
+                                        day = parts[1].zfill(2)
+                                        return f"{year}-{month}-{day}"
+                                    elif len(parts) == 3:
+                                        year = parts[0]
+                                        if len(year) == 2:
+                                            year = f"20{year}"
+                                        month = parts[1].zfill(2)
+                                        day = parts[2].zfill(2)
+                                        return f"{year}-{month}-{day}"
+                                    return ''
+                                except:
+                                    return ''
+
+                            # 날짜 검증 및 처리
+                            created_date = item.get('cr_at')
                             
-                            # MongoDB 업데이트
-                            feeds_collection.update_one(
-                                {'_id': item['_id']},
-                                {'$set': update_data}
-                            )
+                            update_data = {}
                             
-                            # 인플루언서 데이터 업데이트를 위해 item 업데이트
-                            item.update(update_data)
-                            update_influencer_data(item, collections)
+                            if result['is_group_buy'] in ['공구예고', '공구오픈', '공구리마인드']:
+                                # 시작일 처리 - 이제 '당일' 처리는 위에서 완료됨
+                                start_date = validate_date(str(result['start_date']), created_date)
+                                end_date = validate_date(str(result['end_date']), created_date)
+                                
+                                # 브랜드명 정규화 처리 추가
+                                normalized_brand = normalize_brand(result['brand_name'], collections['brands'], item['author'])
+                                
+                                update_data = {
+                                    '09_feed': result['is_group_buy'],
+                                    '09_item': str(result['product_name']),
+                                    '09_brand': str(normalized_brand['name']),  # 정규화된 브랜드명 사용
+                                    'open_date': start_date,
+                                    'end_date': end_date,
+                                    '09_item_category': '',
+                                    '09_item_category_2': '',
+                                    'processed': True
+                                }
+                                
+                                # GPT-4o-mini API를 사용하여 카테고리 분석
+                                if result['product_name']:
+                                    try:
+                                        item_category, item_category2 = analyze_product_category(result['product_name'])
+                                        update_data['09_item_category'] = item_category
+                                        update_data['09_item_category_2'] = item_category2
+                                        
+                                        # 카테고리 분석 결과 출력
+                                        print(f"{i}번 게시글: 카테고리 분석 결과 - 주 카테고리: {item_category}, 서브 카테고리: {item_category2}")
+                                    except Exception as e:
+                                        print(f"카테고리 분석 중 오류 발생: {str(e)}")
+                                
+                                # MongoDB 업데이트
+                                feeds_collection.update_one(
+                                    {'_id': item['_id']},
+                                    {'$set': update_data}
+                                )
+                                
+                                # 인플루언서 데이터 업데이트를 위해 item 업데이트
+                                item.update(update_data)
+                                update_influencer_data(item, collections)
                             
-                        else:
-                            update_data = {
-                                '09_feed': 'N' if result['is_group_buy'] == 'N' else '확인필요',
-                                '09_item': '',
-                                '09_brand': '',
-                                'open_date': '',
-                                'end_date': '',
-                                '09_item_category': '',
-                                '09_item_category_2': '',
-                                'processed': True
-                            }
+                            else:
+                                update_data = {
+                                    '09_feed': 'N' if result['is_group_buy'] == 'N' else '확인필요',
+                                    '09_item': '',
+                                    '09_brand': '',
+                                    'open_date': '',
+                                    'end_date': '',
+                                    '09_item_category': '',
+                                    '09_item_category_2': '',
+                                    'processed': True
+                                }
+                                
+                                feeds_collection.update_one(
+                                    {'_id': item['_id']},
+                                    {'$set': update_data}
+                                )
                             
-                            feeds_collection.update_one(
-                                {'_id': item['_id']},
-                                {'$set': update_data}
-                            )
-                        
-                        # 각 게시글 분석 완료 후 1초 대기
-                        print(f"{i}번 게시글: 처리 완료")
-                        
-                        break  # 성공적으로 처리되면 while 루프 종료
-                        
-                    except Exception as e:
-                        if "429" in str(e):  # Resource exhausted 에러
-                            retry_count += 1
-                            print(f"\nGemini API 할당량 초과. {wait_time}초 후 재시도... (시도 {retry_count}번째)")
-                            time.sleep(wait_time)  # 10초 대기
-                        else:
-                            print(f"{i}번 게시글: 처리 중 오류 발생 - {str(e)}")
-                            break  # 다른 오류 발생 시 루프 종료
+                            # 각 게시글 분석 완료 후 1초 대기
+                            print(f"{i}번 게시글: 처리 완료")
+                            
+                            break  # 성공적으로 처리되면 while 루프 종료
+                            
+                        except Exception as e:
+                            if "429" in str(e):  # Resource exhausted 에러
+                                retry_count += 1
+                                print(f"\nOpenAI API 할당량 초과. {wait_time}초 후 재시도... (시도 {retry_count})")
+                                time.sleep(wait_time)  # 10초 대기
+                            else:
+                                # 다른 종류의 오류는 기존처럼 처리
+                                print(f"{i}번 게시글: 처리 중 오류 발생 - {str(e)}")
+                                break  # 다른 오류 발생 시 루프 종료
                 
-            except Exception as e:
-                print(f"{i}번 게시글: 처리 중 오류 발생 - {str(e)}")
-                continue
+                except Exception as e:
+                    print(f"{i}번 게시글: 처리 중 오류 발생 - {str(e)}")
+                    continue
+            
+            processed_count += len(batch)
+            print(f"현재까지 {processed_count}/{total_feeds} 게시글 처리 완료")
         
         print("\n모든 분석이 완료되었습니다.")
         mongo_client.close()
         
-        # Gemini API 클라이언트 정리
-        try:
-            genai.reset_session()  # Gemini 세션 리셋
-        except:
-            pass
-        
     except Exception as e:
         print(f"오류 발생: {str(e)}")
-
-def compare_and_select_best_result(result1, result2):
-    """두 분석 결과를 비교하여 더 적절한 결과를 선택"""
-    
-    # 결과 비교 출력 추가
-    print("첫 번째 분석 결과:", json.dumps(result1, ensure_ascii=False))
-    print("두 번째 분석 결과:", json.dumps(result2, ensure_ascii=False))
-    
-    # 결과가 동일한 경우
-    if result1 == result2:
-        print("두 분석 결과가 동일합니다.")
-        selected_result = result1
-    else:
-        score1 = 0
-        score2 = 0
-        
-        # 1. is_group_buy 평가
-        def score_group_buy(value):
-            if value in ['공구오픈', '공구예고', '공구리마인드']:
-                return 2  # 명확한 공구 상태
-            elif value == 'N':
-                return 1  # 명확한 비공구
-            return 0     # 확인필요
-        
-        score1 += score_group_buy(result1['is_group_buy'])
-        score2 += score_group_buy(result2['is_group_buy'])
-        
-        # 2. 상품명 평가
-        def score_product_name(name):
-            if name and len(name) > 3:  # 의미 있는 길이의 상품명
-                return 1
-            return 0
-        
-        score1 += score_product_name(result1['product_name'])
-        score2 += score_product_name(result2['product_name'])
-        
-        # 3. 브랜드명 평가 (수정된 부분)
-        def score_brand_name(name):
-            if not name or name == '확인필요':
-                return 0
-            # 브랜드명에 쉼표가 있으면 감점
-            if ',' in name or '，' in name or '、' in name:
-                return -1
-            return 1
-        
-        score1 += score_brand_name(result1['brand_name'])
-        score2 += score_brand_name(result2['brand_name'])
-        
-        # 4. 날짜 정보 평가
-        def score_dates(start_date, end_date):
-            score = 0
-            if start_date:
-                score += 1
-            if end_date:
-                score += 1
-            return score
-        
-        score1 += score_dates(result1['start_date'], result1['end_date'])
-        score2 += score_dates(result2['start_date'], result2['end_date'])
-        
-        # 최종 점수 출력 추가
-        print(f"첫 번째 분석 점수: {score1}, 두 번째 분석 점수: {score2}")
-        
-        # 최종 선택 결과 출력
-        if score1 > score2:
-            print("첫 번째 분석 결과가 선택되었습니다.")
-            selected_result = result1
-        elif score2 > score1:
-            print("두 번째 분석 결과가 선택되었습니다.")
-            selected_result = result2
-        else:
-            print("동점인 경우, 브랜드명에 쉼표가 없는 결과를 선택합니다.")
-            if ',' in result2['brand_name'] or '，' in result2['brand_name'] or '、' in result2['brand_name']:
-                selected_result = result1
-            elif ',' in result1['brand_name'] or '，' in result1['brand_name'] or '、' in result1['brand_name']:
-                selected_result = result2
-            else:
-                print("둘 다 쉼표가 없는 경우 첫 번째 결과를 선택합니다.")
-                selected_result = result1
-    
-    # 최종 선택된 결과에서 브랜드명에 쉼표가 있는지 확인하고 '복합상품'으로 변경
-    if selected_result.get('brand_name') and any(delimiter in selected_result['brand_name'] for delimiter in [',', '，', '、']):
-        print(f"브랜드명에 쉼표가 포함되어 있어 '복합상품'으로 변경합니다: {selected_result['brand_name']} → 복합상품")
-        selected_result['brand_name'] = '복합상품'
-    
-    return selected_result
 
 def setup_brand_logger():
     """브랜드 정규화 로깅 설정"""
@@ -1070,12 +988,12 @@ def normalize_brand(brand_name, brands_collection, author=None):
             if info.get('aliases'):
                 logger.info(f"  └ 기존 별칭: {', '.join(info['aliases'])}")
         
-        # Gemini API 분석
+        # OpenAI GPT-4o-mini 모델을 사용하여 브랜드 관계 분석
         if similar_brands:
-            analysis = analyze_brands_with_gemini(brand_name, similar_brands[:10])
+            analysis = analyze_brands_with_openai(brand_name, similar_brands[:10])
             
             if analysis and analysis.get('representative_brand'):
-                logger.info("\n🤖 Gemini 분석 결과:")
+                logger.info("\n🤖 OpenAI 분석 결과:")
                 logger.info(f"대표 브랜드: '{analysis['representative_brand']}'")
                 logger.info(f"별칭으로 처리: {analysis.get('aliases', [])}")
                 if analysis.get('different_brands'):
@@ -1090,7 +1008,7 @@ def normalize_brand(brand_name, brands_collection, author=None):
                     # 기존 별칭들도 포함하여 병합
                     existing_aliases = []
                     for brand, info, _ in similar_brands:
-                        if brand in new_aliases:  # Gemini가 별칭으로 판단한 브랜드의
+                        if brand in new_aliases:  # OpenAI가 별칭으로 판단한 브랜드의
                             existing_aliases.extend(info.get('aliases', []))  # 기존 별칭들도 추가
                 
                     # merge_aliases 함수를 사용하여 모든 별칭 병합
@@ -1166,9 +1084,9 @@ def normalize_brand(brand_name, brands_collection, author=None):
         print(error_message)
         return {'name': brand_name, 'category': ''}
 
-def analyze_brands_with_gemini(target_brand, similar_brands):
-    """Gemini API를 사용하여 브랜드 관계 분석"""
-    max_retries = 5
+def analyze_brands_with_openai(target_brand, similar_brands):
+    """OpenAI GPT-4o-mini 모델을 사용하여 브랜드 관계 분석"""
+    max_retries = 10
     retry_count = 0
     wait_time = 10
     
@@ -1199,9 +1117,16 @@ def analyze_brands_with_gemini(target_brand, similar_brands):
 }}
 """
             
-            model = genai.GenerativeModel('gemini-2.0-flash')
-            response = model.generate_content(prompt)
-            text = response.text.strip()
+            # OpenAI 클라이언트 초기화
+            client = openai.OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+            
+            # GPT-4o-mini API 호출
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "user", "content": prompt}]
+            )
+            
+            text = response.choices[0].message.content.strip()
             
             # JSON 형식 정리
             if text.startswith('```json'):
@@ -1216,12 +1141,12 @@ def analyze_brands_with_gemini(target_brand, similar_brands):
         except Exception as e:
             if "429" in str(e):  # API 할당량 초과 오류
                 retry_count += 1
-                print(f"\nGemini API 할당량 초과. {wait_time}초 대기 중... (시도 {retry_count}/{max_retries})")
+                print(f"\nOpenAI API 할당량 초과. {wait_time}초 대기 중... (시도 {retry_count}/{max_retries})")
                 time.sleep(wait_time)
                 wait_time += 10
                 continue
             else:
-                print(f"Gemini API 오류: {e}")
+                print(f"OpenAI API 오류: {e}")
                 return None
     
     print(f"\n최대 재시도 횟수({max_retries})를 초과했습니다.")
