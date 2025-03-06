@@ -225,7 +225,7 @@ def main():
         except FileNotFoundError:
             # 기본 URL 사용
             # profile_url = "https://www.instagram.com/c_____woo/"
-            profile_url = "https://www.instagram.com/goyanmedia/"
+            profile_url = "https://www.instagram.com/wise_vendor_7/"
             # profile_url = "https://www.instagram.com/bnam91/"
 
         from_user = profile_url.split('/')[-2]  # username 추출

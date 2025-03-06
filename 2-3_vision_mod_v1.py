@@ -457,37 +457,41 @@ def scroll_until_images(driver, target_count=18):
             break
         last_height = new_height
 
-# JSON 파일의 데이터를 업데이트하는 함수
+# MongoDB 문서를 업데이트하는 함수
 # 카테고리, 이미지 URL, 릴스 평균 조회수 정보를 갱신
-def update_json_file(profile_link, categories, percentages, image_url, reels_avg_views):
+def update_mongodb(profile_link, categories, percentages, image_url, reels_avg_views):
     try:
-        json_file_path = os.path.join(os.path.dirname(__file__), '2-2_influencer_processing_data.json')
+        # MongoDB 연결
+        uri = os.getenv('MONGODB_URI', "mongodb+srv://coq3820:JmbIOcaEOrvkpQo1@cluster0.qj1ty.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
+        client = MongoClient(uri, server_api=ServerApi('1'))
         
-        # JSON 파일 읽기
-        with open(json_file_path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
+        # 데이터베이스와 컬렉션 선택
+        db = client['insta09_database']
+        collection = db['02_main_influencer_data']
         
-        # 해당 profile_link를 가진 항목 찾아 업데이트
-        for item in data:
-            if item['profile_link'] == profile_link:
-                # 카테고리와 퍼센티지를 포함한 문자열 생성
-                category_strings = []
-                for cat, pct in zip(categories, percentages):
-                    category_strings.append(f"{cat}({pct:.0f}%)")
-                category_string = ','.join(category_strings)
-                
-                # 변경된 필드명으로 업데이트
-                item['category'] = category_string
-                item['image_url'] = image_url
-                item['reels_views(15)'] = int(reels_avg_views)
-                break
+        # 카테고리와 퍼센티지를 포함한 문자열 생성
+        category_strings = []
+        for cat, pct in zip(categories, percentages):
+            category_strings.append(f"{cat}({pct:.0f}%)")
+        category_string = ','.join(category_strings)
         
-        # JSON 파일 덮어쓰기
-        with open(json_file_path, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=4)
+        # 해당 profile_link를 가진 문서 업데이트
+        result = collection.update_one(
+            {"profile_link": profile_link},
+            {"$set": {
+                "category": category_string,
+                "image_url": image_url,
+                "reels_views(15)": int(reels_avg_views)
+            }}
+        )
+        
+        if result.modified_count > 0:
+            print(f"MongoDB 업데이트 성공: {profile_link}")
+        else:
+            print(f"MongoDB 업데이트 실패 (문서 찾지 못함): {profile_link}")
             
     except Exception as e:
-        print(f'JSON 파일 업데이트 실패: {str(e)}')
+        print(f'MongoDB 업데이트 실패: {str(e)}')
 
 # 릴스의 조회수를 수집하고 평균을 계산하는 함수
 # 상하위 20%를 제외한 평균 또는 전체 평균 계산
@@ -673,10 +677,10 @@ for idx, row_data in enumerate(target_rows, 1):
                 reels_avg_views = reels_data['average_views']
                 print(f"릴스 평균 조회수: {int(reels_avg_views):,}회")
                 
-                # JSON 파일 업데이트
+                # MongoDB 업데이트
                 categories = analysis_result['categories']
                 percentages = [pct for _, pct in analysis_result['all_categories']]
-                update_json_file(row_data['url'], categories, percentages, uploaded_url, reels_avg_views)
+                update_mongodb(row_data['url'], categories, percentages, uploaded_url, reels_avg_views)
                 
                 print("처리 완료!\n")
                 

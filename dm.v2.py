@@ -100,7 +100,7 @@ options.add_experimental_option("detach", True)
 options.add_argument("disable-blink-features=AutomationControlled")
 options.add_experimental_option("excludeSwitches", ["enable-logging"])
 
-user_data_dir = "C:\\Users\\USER\\Desktop\\코딩\\인스타그램\\user_data\\bnam92"
+user_data_dir = "C:\\Users\\USER\\Desktop\\github\\insta_vendor\\user_data\\office_goyamedia_feed"
 options.add_argument(f"user-data-dir={user_data_dir}")
 
 # 캐시와 임시 파일 정리 (로그인 정보 유지)
