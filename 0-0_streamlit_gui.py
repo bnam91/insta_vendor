@@ -162,20 +162,16 @@ with st.sidebar:
     
     # 데이터 분석 섹션
     with st.expander("📊데이터 분석"):
-        if st.button("뉴피드 크롤링", key="today_feed"):
+        if st.button("뉴피드 크롤링", key="today_feed", help="신규 피드를 크롤링합니다."):
             run_script('1-1_newfeed_crawl.py', '뉴피드 크롤링', st.empty())
-        if st.button("클로드 추출", key="brand_extract"):
-            run_script('1-2_newfeed_analysis_(claude).py', '클로드 추출', st.empty())
-        if st.button("브랜드 중복체크", key="brand_check"):
-            run_script('st_test2.py', '브랜드 중복체크', st.empty())
-        if st.button("아이템 중복체크", key="item_check"):
-            run_script('st_test2.py', '아이템 중복체크', st.empty())
-        if st.button("🌞오늘의 아이템 찾기", key="today_item"):
+        if st.button("AI 추출(4o-mini)", key="brand_extract", help="AI가 공구피드인지 분석합니다."):
+            run_script('1-2_newfeed_analysis_(4omini).py', 'AI 추출(4o-mini)', st.empty())
+        if st.button("🌞오늘의 아이템 찾기", key="today_item", help="최근 n일간 신규 피드에서 아이템을 찾습니다."):
             run_script('1-3_item_today.py', '오늘의 아이템 찾기', st.empty())
     
     # SNS 분석 섹션
     with st.expander("👥SNS 분석"):
-        if st.button("팔로잉 추출", key="following_extract"):
+        if st.button("팔로잉 추출", key="following_extract", help="계정을 입력하면 팔로잉 추출이 진행됩니다."):
             following_extract_dialog()
         
         # 저장된 스크립트 실행 상태가 있으면 실행
@@ -188,16 +184,16 @@ with st.sidebar:
             )
             del st.session_state.run_script
 
-        if st.button("인플루언서 분석", key="influencer_analysis"):
+        if st.button("인플루언서 분석", key="influencer_analysis", help="팔로잉 추출한 인원을 분석 후 팔로우합니다."):
             run_script('2-2_influencer_processing_v2.py', '인플루언서 분석', st.empty())
-        if st.button("비전 분석", key="vision_analysis"):
+        if st.button("비전 분석", key="vision_analysis", help="팔로워한 계정 2차 분석(카테고리, 릴스조회수)"):
             run_script('2-3_vision_mod_v1.py', '비전 분석', st.empty())
-        if st.button("등급 분류", key="grade_classification"):
+        if st.button("등급 분류", key="grade_classification", help="등급 분류 후 시트에 저장합니다. 비전분석을 완료해주세요"):
             run_script('st_test3.py', '등급 분류', st.empty())
     
     # DM 관리 섹션
     with st.expander("💌DM 관리"):
-        if st.button("DM팔로우시트 열기", key="dm_sheet"):
+        if st.button("DM팔로우시트 열기", key="dm_sheet", help="DM보낼 인원 및 내용을 입력합니다"):
             try:
                 sheet_id = '1W5Xz4uaqSPysGLk28w6ybFHkGAPcz19_1BHdOih0Hoc'  # DM 팔로우시트의 ID
                 sheet_url = f'https://docs.google.com/spreadsheets/d/{sheet_id}'
@@ -212,8 +208,8 @@ with st.sidebar:
             run_script('st_test2.py', '팔로우하기', st.empty())
             
     # 시트연동 섹션 추가
-    with st.expander("📑시트연동"):
-        if st.button("시트 연동", key="load_sheet"):
+    with st.expander("📑전화걸기"):
+        if st.button("전화걸기 모듈실행", key="load_sheet"):
             run_script('st_test2.py', '시트 연동', st.empty())
         if st.button("시트 보류", key="update_sheet"):
             run_script('st_test2.py', '시트 보류', st.empty())
@@ -221,7 +217,7 @@ with st.sidebar:
             run_script('st_test2.py', '시트 내보내기', st.empty())
 
     # 필터 섹션 추가 - 04_test_item_today_data가 선택되었을 때만 표시
-    if 'collection_select' in st.session_state and st.session_state.collection_select == '04_test_item_today_data':
+    if 'collection_select' in st.session_state and st.session_state.collection_select == '04_main_item_today_data':
         st.divider()
         st.subheader("필터 옵션")
         
@@ -284,10 +280,10 @@ client = MongoClient(uri, server_api=ServerApi('1'))
 db = client['insta09_database']
 collections = [
     
-    '01_test_newfeed_crawl_data',
-    '02_test_influencer_data', 
+    '01_main_newfeed_crawl_data',
+    '02_main_influencer_data', 
     '03_main_following_extract_data',
-    '04_test_item_today_data'
+    '04_main_item_today_data'
     
 ]
 
@@ -384,7 +380,7 @@ if category_search:
                 percent_threshold = 0
 
             # 02_test_influencer_data 컬렉션에서 데이터 가져오기
-            collection = db['02_test_influencer_data']
+            collection = db['02_main_influencer_data']
             data = list(collection.find({}, {'_id': 0}))
             
             if data:
@@ -426,7 +422,7 @@ elif search_button:
     try:
         if search_type == "브랜드":
             # 02_test_influencer_data 컬렉션에서 검색
-            collection = db['02_test_influencer_data']
+            collection = db['02_main_influencer_data']
             
             # brand.name에 검색어가 포함된 경우 검색 (대소문자 구분 없이)
             query = {
@@ -486,7 +482,7 @@ elif search_button:
         
         elif search_type == "인플루언서":
             # 02_test_influencer_data 컬렉션에서 검색
-            collection = db['02_test_influencer_data']
+            collection = db['02_main_influencer_data']
             
             # username 또는 clean_name에 검색어가 포함된 경우 검색 (대소문자 구분 없이)
             query = {
@@ -544,7 +540,7 @@ elif search_button:
         
         elif search_type == "아이템":
             # 02_test_influencer_data 컬렉션에서 검색
-            collection = db['02_test_influencer_data']
+            collection = db['02_main_influencer_data']
             
             # products.item에 검색어가 포함된 경우 검색 (대소문자 구분 없이)
             query = {
@@ -638,7 +634,7 @@ elif selected_collection and selected_collection != 'empty_data':
             df = pd.DataFrame(data)
             
             # 04_test_item_today_data 컬렉션이 선택되고 필터가 적용된 경우
-            if selected_collection == '04_test_item_today_data':
+            if selected_collection == '04_main_item_today_data':
                 # 아이템 카테고리 필터 적용
                 if 'filter_multiselect' in st.session_state and st.session_state.filter_multiselect:
                     st.info(f"선택된 아이템 필터: {', '.join(st.session_state.filter_multiselect)}")
