@@ -94,7 +94,7 @@ def load_data_from_mongodb():
         
         # 데이터베이스와 컬렉션 선택
         db = client['insta09_database']
-        collection = db['02_test_influencer_data']
+        collection = db['02_main_influencer_data']
         
         # 모든 문서 가져오기
         print("데이터 로드 중...")
