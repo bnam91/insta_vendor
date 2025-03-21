@@ -21,6 +21,9 @@ from selenium.webdriver.common.action_chains import ActionChains
 from captchasolver import save_captcha_image, get_captcha_answer, input_captcha_answer, extract_seller_info, solve_captcha_and_get_info
 import pandas as pd
 import shutil
+import pymongo
+from pymongo.mongo_client import MongoClient
+from pymongo.server_api import ServerApi
 
 
 # .env 파일 로드
@@ -28,6 +31,14 @@ load_dotenv()
 
 # OpenAI API 키 설정 (.env 파일에서 가져오기)
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+# MongoDB 연결 설정
+uri = "mongodb+srv://coq3820:JmbIOcaEOrvkpQo1@cluster0.qj1ty.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
+client = MongoClient(uri, server_api=ServerApi('1'))
+
+# 데이터베이스 및 컬렉션 선택
+db = client['insta09_database']
+collection = db['brand_extract']
 
 # 캐시 데이터 정리 함수
 def clear_chrome_data(user_data_dir, keep_login=True):
@@ -54,25 +65,23 @@ def clear_chrome_data(user_data_dir, keep_login=True):
             os.remove(file_path)
             print(f"{file_name} 파일을 삭제했습니다.")
 
-# 엑셀 파일에서 브랜드명 가져오기
-brand_file_path = "brand_list.xlsx"  # 브랜드 이름이 저장된 엑셀 파일 경로
-
-try:
-    df = pd.read_excel(brand_file_path)
-    # 첫 번째 열에 브랜드 이름이 있다고 가정
-    brand_column = df.columns[0]  # 첫 번째 열 이름
-    brand_names = df[brand_column].dropna().tolist()  # NaN 값 제거
-    
-    if brand_names:
-        brand_name = brand_names[0]  # 첫 번째 브랜드 사용 (필요에 따라 다른 방식으로 선택 가능)
-        print(f"엑셀에서 불러온 브랜드명: {brand_name}")
-    else:
-        brand_name = "샤크닌자"  # 기본값
-        print(f"엑셀에서 브랜드명을 찾을 수 없어 기본값 사용: {brand_name}")
-except Exception as e:
-    brand_name = "샤크닌자"  # 기본값
-    print(f"엑셀 파일 읽기 오류: {e}")
-    print(f"기본 브랜드명 사용: {brand_name}")
+# 엑셀 파일에서 브랜드명 가져오기 부분을 MongoDB에서 가져오도록 수정
+def get_brand_names_from_mongodb():
+    try:
+        # brand_extract 컬렉션에서 name 필드 가져오기
+        brands = collection.find({}, {"name": 1})
+        brand_names = [brand.get("name") for brand in brands if brand.get("name")]
+        
+        if brand_names:
+            print(f"MongoDB에서 불러온 브랜드 수: {len(brand_names)}")
+            print(f"첫 5개 브랜드: {brand_names[:5] if len(brand_names) >= 5 else brand_names}")
+            return brand_names
+        else:
+            print("MongoDB에서 브랜드명을 찾을 수 없습니다.")
+            return ["샤크닌자"]  # 기본값
+    except Exception as e:
+        print(f"MongoDB 브랜드 정보 조회 오류: {e}")
+        return ["샤크닌자"]  # 기본값
 
 # 페이지 끝까지 스크롤 다운하는 함수 - 일반적인 스크롤 방법만 사용
 def scroll_to_bottom():
@@ -276,7 +285,29 @@ def check_product_brand_match(browser, brand_name):
         print("상품이 없습니다.")
         return False, []
     
+# 추출 정보를 MongoDB에 저장하는 함수 추가
+def save_contact_info_to_mongodb(brand_name, contact_info):
+    try:
+        # 브랜드명으로 문서 찾아서 contact 필드에 정보 추가
+        result = collection.update_one(
+            {"name": brand_name},
+            {"$push": {"contact": contact_info}}
+        )
+        
+        if result.modified_count > 0:
+            print(f"'{brand_name}' 브랜드의 연락처 정보가 MongoDB에 성공적으로 저장되었습니다.")
+        else:
+            print(f"'{brand_name}' 브랜드를 찾을 수 없거나 정보 업데이트에 실패했습니다.")
+        
+        return result.modified_count > 0
+    except Exception as e:
+        print(f"MongoDB 저장 오류: {e}")
+        return False
+
 def process_brand(brand_name):
+    extracted_info = {}  # 추출된 정보를 저장할 딕셔너리
+    extracted_info["브랜드명"] = brand_name
+    
     # 브라우저 초기화 코드 제거 (외부에서 정의)
     
     # 검색어를 URL 인코딩
@@ -314,19 +345,23 @@ def process_brand(brand_name):
             
             # 여기서 바로 고객센터 전화번호 분석으로 넘어감
             best_url = browser.current_url
+            extracted_info["공식 홈페이지 URL"] = best_url
             print(f"직접 이동한 공식 홈페이지 URL: {best_url}")
             
             # 'coupang.com'이 URL에 포함되어 있는지 확인
             if 'coupang.com' in best_url:
                 print("쿠팡링크입니다. 확인해주세요")
+                extracted_info["결과"] = "쿠팡링크"
                 # 코드 완전히 종료
-                return()  # 프로그램 종료
+                return extracted_info  # 프로그램 종료
             
             # 'naver.com'이 URL에 포함되어 있는지 확인
             if 'naver.com' in best_url:
                 print("이 URL은 네이버 도메인을 포함하고 있습니다.")
+                extracted_info["도메인유형"] = "네이버"
             else:
                 print("이 URL은 네이버 도메인을 포함하고 있지 않습니다.")
+                extracted_info["도메인유형"] = "외부사이트"
         except Exception as e:
             print(f"바로가기 요소 클릭 중 오류 발생: {e}")
             print("대체 방법으로 링크 분석을 진행합니다...")
@@ -434,7 +469,7 @@ def process_brand(brand_name):
         if 'coupang.com' in best_url:
             print("쿠팡링크입니다. 확인해주세요")
             # 코드 완전히 종료
-            return()  # 프로그램 종료
+            return extracted_info  # 프로그램 종료
         
         # direct_link_thumb을 통해 이미 이동한 경우가 아니라면 URL로 이동
         if browser.current_url != best_url:
@@ -507,6 +542,8 @@ def process_brand(brand_name):
                                 for info_type, value in seller_info.items():
                                     if value:  # 값이 있는 경우만 출력
                                         print(f"{info_type}: {value}")
+                                        # 추출된 정보를 딕셔너리에 저장
+                                        extracted_info[info_type] = value
                                         
                                 # 공식 브랜드가 아닌 경우 추가 경고 메시지 (스마트스토어 처리 시에만 해당)
                                 if 'is_authentic' in locals() and not is_authentic:
@@ -560,6 +597,10 @@ def process_brand(brand_name):
                     # URL 정보 추가
                     info_json["공식 홈페이지 URL"] = best_url
                     
+                    # 추출된 정보를 딕셔너리에 저장
+                    for key, value in info_json.items():
+                        extracted_info[key] = value
+                    
                     # 예쁘게 포맷팅하여 출력
                     print("\n======= 추출된 정보 =======")
                     for key, value in info_json.items():
@@ -596,8 +637,8 @@ def process_brand(brand_name):
                     print(f"응답 토큰: {completion_tokens}")
                     print(f"총 토큰: {total_tokens}")
                     print(f"예상 비용: ${total_cost_usd:.6f} (약 {total_cost_krw:.2f}원)")
-            else:
-                print("API 응답 오류:", gpt_phone_response)
+                else:
+                    print("API 응답 오류:", gpt_phone_response)
 
         # 스마트스토어 URL인 경우 브랜드명 확인 추가
         elif 'smartstore.naver.com' in browser.current_url and '/category/' in browser.current_url:
@@ -665,7 +706,9 @@ def process_brand(brand_name):
                             for info_type, value in seller_info.items():
                                 if value:  # 값이 있는 경우만 출력
                                     print(f"{info_type}: {value}")
-                                    
+                                    # 추출된 정보를 딕셔너리에 저장
+                                    extracted_info[info_type] = value
+                            
                             # 공식 브랜드가 아닌 경우 추가 경고 메시지 (스마트스토어 처리 시에만 해당)
                             if not is_authentic:
                                 print("\n⚠️ 경고: 판매자 정보가 정확한 브랜드 공식 정보인지 확인이 필요합니다! ⚠️")
@@ -714,6 +757,10 @@ def process_brand(brand_name):
                     # URL 정보 추가
                     info_json["공식 홈페이지 URL"] = best_url
                     
+                    # 추출된 정보를 딕셔너리에 저장
+                    for key, value in info_json.items():
+                        extracted_info[key] = value
+                    
                     # 예쁘게 포맷팅하여 출력
                     print("\n======= 추출된 정보 =======")
                     for key, value in info_json.items():
@@ -750,8 +797,8 @@ def process_brand(brand_name):
                     print(f"응답 토큰: {completion_tokens}")
                     print(f"총 토큰: {total_tokens}")
                     print(f"예상 비용: ${total_cost_usd:.6f} (약 {total_cost_krw:.2f}원)")
-            else:
-                print("API 응답 오류:", gpt_phone_response)
+                else:
+                    print("API 응답 오류:", gpt_phone_response)
 
         else:
             # 일반 웹사이트인 경우 기존 코드대로 처리
@@ -785,6 +832,10 @@ def process_brand(brand_name):
                     # URL 정보 추가
                     info_json["공식 홈페이지 URL"] = best_url
                     
+                    # 추출된 정보를 딕셔너리에 저장
+                    for key, value in info_json.items():
+                        extracted_info[key] = value
+                    
                     # 예쁘게 포맷팅하여 출력
                     print("\n======= 추출된 정보 =======")
                     for key, value in info_json.items():
@@ -821,8 +872,8 @@ def process_brand(brand_name):
                     print(f"응답 토큰: {completion_tokens}")
                     print(f"총 토큰: {total_tokens}")
                     print(f"예상 비용: ${total_cost_usd:.6f} (약 {total_cost_krw:.2f}원)")
-            else:
-                print("API 응답 오류:", gpt_phone_response)
+                else:
+                    print("API 응답 오류:", gpt_phone_response)
 
         # 사용자가 확인할 시간 제공
         print("\n확인 완료되었습니다. 다음 브랜드로 진행합니다.")
@@ -947,101 +998,15 @@ def process_brand(brand_name):
         print(f"CAPTCHA 처리 중 오류 발생: {e}")
         print("CAPTCHA 처리를 건너뛰고 계속 진행합니다.")
 
-def extract_seller_info(browser):
-    """
-    캡챠 없이 표시된 판매자 정보 페이지에서 판매자 정보를 추출합니다.
-    """
-    try:
-        # 결과 저장할 딕셔너리
-        seller_info = {}
-        
-        # 판매자 정보 테이블에서 데이터 추출
-        # 일반적인 테이블 구조를 가정
-        table_rows = browser.find_elements("css selector", "table tr")
-        
-        for row in table_rows:
-            # 각 행에서 셀 추출
-            cells = row.find_elements("css selector", "th, td")
-            if len(cells) >= 2:
-                # 첫 번째 셀은 키, 두 번째 셀은 값
-                key = cells[0].text.strip()
-                value = cells[1].text.strip()
-                
-                # 값이 있는 경우만 추가
-                if key and value:
-                    seller_info[key] = value
-        
-        # 정보를 찾지 못했다면 다른 방법으로 시도
-        if not seller_info:
-            # 키-값 쌍으로 구성된 div 요소 확인
-            info_divs = browser.find_elements("css selector", "div.info_div, div.seller_info")
-            for div in info_divs:
-                # 레이블과 값 추출 시도
-                labels = div.find_elements("css selector", "span.label, dt, th")
-                values = div.find_elements("css selector", "span.value, dd, td")
-                
-                for i in range(min(len(labels), len(values))):
-                    key = labels[i].text.strip()
-                    value = values[i].text.strip()
-                    if key and value:
-                        seller_info[key] = value
-        
-        # 여전히 정보를 찾지 못했다면 페이지 전체 텍스트 사용
-        if not seller_info:
-            # GPT-4o mini에 전체 페이지 텍스트 전송하여 판매자 정보 추출 요청
-            page_text = browser.find_element("css selector", "body").text
-            seller_info = {
-                "판매자명": "페이지에서 직접 확인 필요",
-                "연락처": "페이지에서 직접 확인 필요",
-                "이메일": "페이지에서 직접 확인 필요",
-                "사업자등록번호": "페이지에서 직접 확인 필요",
-                "판매자 주소": "페이지에서 직접 확인 필요"
-            }
-        
-        return seller_info
-        
-    except Exception as e:
-        print(f"판매자 정보 직접 추출 중 오류 발생: {e}")
-        return None
+    # 추출된 정보 반환
+    return extracted_info
 
 # 메인 코드 실행
 if __name__ == "__main__":
-    # 엑셀 파일 경로 확인 및 로드
-    brand_file_path = "brand_list.xlsx"
+    # MongoDB에서 브랜드명 가져오기
+    brand_names = get_brand_names_from_mongodb()
     
-    # 파일 존재 여부 확인
-    if not os.path.exists(brand_file_path):
-        print(f"오류: '{brand_file_path}' 파일이 현재 디렉토리에 존재하지 않습니다.")
-        print(f"현재 작업 디렉토리: {os.getcwd()}")
-        print("파일 경로를 확인해주세요.")
-        input("종료하려면 Enter 키를 누르세요...")
-        exit()
-    
-    # 파일 읽기 시도
-    try:
-        print(f"'{brand_file_path}' 파일 읽기 시도 중...")
-        df = pd.read_excel(brand_file_path)
-        
-        # 데이터프레임 기본 정보 출력
-        print(f"엑셀 파일 로드 성공! 행: {len(df)}, 열: {len(df.columns)}")
-        print("열 이름:", df.columns.tolist())
-        print("처음 5개 행:")
-        print(df.head())
-        
-        # 브랜드명 열 가져오기
-        brand_column = df.columns[0]  # 첫 번째 열 사용
-        brand_names = df[brand_column].dropna().tolist()
-        print(f"추출된 브랜드 수: {len(brand_names)}")
-        if len(brand_names) > 0:
-            print("첫 5개 브랜드:", brand_names[:5])
-    except Exception as e:
-        print(f"엑셀 파일 읽기 오류: {e}")
-        print(f"오류 타입: {type(e).__name__}")
-        brand_names = ["샤크닌자"]  # 기본값
-        print(f"기본 브랜드명 사용: {brand_names}")
-        input("계속하려면 Enter 키를 누르세요...")
-
-    # A1부터 시작 (인덱스 0으로 변경)
+    # 시작 인덱스 설정
     start_index = 0
     
     if start_index < len(brand_names):
@@ -1063,12 +1028,34 @@ if __name__ == "__main__":
         chrome_options.headless = False
 
         browser = webdriver.Chrome(options=chrome_options)
+        
+        # 결과를 저장할 리스트
+        results = []
+
+        # 건너뛸 브랜드명 리스트
+        skip_brands = ['Unknown', 'Unkonwn', '확인필요', 'Unspecified Brand']
 
         # A1부터 모든 브랜드 처리
-        for brand_name in brand_names[start_index:]:
+        for idx, brand_name in enumerate(brand_names[start_index:]):
+            # 건너뛸 브랜드명인지 확인
+            if brand_name in skip_brands or brand_name.strip() == '':
+                print(f"\n===== 브랜드: {brand_name} - 처리 건너뜀 =====\n")
+                # 빈 정보를 결과에 추가 (건너뛰었음을 표시)
+                results.append({"브랜드명": brand_name, "결과": "처리 건너뜀"})
+                continue
+                
             print(f"\n===== 브랜드: {brand_name} 처리 시작 =====\n")
-            process_brand(brand_name)  # browser 매개변수 제거
+            brand_info = process_brand(brand_name)
+            results.append(brand_info)  # 결과 저장
+            
+            # MongoDB에 결과 저장
+            save_contact_info_to_mongodb(brand_name, brand_info)
+            
             print(f"\n===== 브랜드: {brand_name} 처리 완료 =====\n")
+            
+            # 매 5개 브랜드마다 중간 저장 (Excel 저장 코드는 제거했으므로 간단한 로그만 출력)
+            if (idx + 1) % 5 == 0:
+                print(f"\n중간 진행 상황: {idx + 1}개 브랜드 처리됨\n")
 
         print("모든 브랜드 처리 완료")
         input("종료하려면 Enter 키를 누르세요...")
