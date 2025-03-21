@@ -1,4 +1,10 @@
 """
+첫 세팅 시
+1. 0_insta_login.txt를 생성하고
+2. user_data 폴더에 로그인 정보를 입력합니다. 
+    - {사용하는곳}_{인스타아이디}
+    - mini_goyamedia_feed
+
 
 몽고db : https://cloud.mongodb.com/v2/67b53ffbba89e066f00516de#/clusters
 github : https://github.com/bnam91/insta_vendor
