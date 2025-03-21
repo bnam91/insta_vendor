@@ -125,14 +125,30 @@ def extract_official_links(soup, brand_name):
     potential_links = []
     keywords = ['공식', '홈페이지', '스토어', '몰', '사이트', 'official', brand_name]
     
+    # 제외할 URL 패턴 목록
+    exclude_patterns = [
+        'https://blog.naver.com/', 
+        'https://shoppinglive.naver.com', 
+        'namu.wiki',
+        '/ns/home',
+        'instagram',
+        'youtube.com',
+        'facebook.com',
+        'twitter.com',
+        'musinsa'
+    ]
+    
     # 모든 링크 검사
     for a_tag in soup.find_all('a', href=True):
         link_text = a_tag.text.lower()
         href = a_tag['href']
         
-        # 키워드가 텍스트나 href에 포함된 링크 찾기
-        if any(keyword.lower() in link_text for keyword in keywords) or \
-           any(keyword.lower() in href for keyword in keywords):
+        # 제외 패턴이 URL에 포함되어 있는지 확인
+        should_exclude = any(pattern in href for pattern in exclude_patterns)
+        
+        # 제외 패턴이 없고, 키워드가 텍스트나 href에 포함된 링크 찾기
+        if not should_exclude and (any(keyword.lower() in link_text for keyword in keywords) or \
+           any(keyword.lower() in href for keyword in keywords)):
             potential_links.append({
                 'text': a_tag.text,
                 'href': href,
@@ -206,7 +222,7 @@ def analyze_phone_with_gpt4omini(soup, brand_name, url):
         "messages": [
             {
                 "role": "system",
-                "content": "한국어로 답변해주세요. 당신은 웹페이지에서 기업 정보를 추출하는 전문가입니다. 다음 형식의 JSON으로 응답해야 합니다:\n{\n\"상호명\": \"회사명\",\n\"고객센터 번호\": \"전화번호\",\n\"사업장소재지\": \"주소\",\n\"이메일주소\": \"이메일\"\n}\n모든 필드는 찾을 수 없으면 \"정보 없음\"으로 표시하세요."
+                "content": "한국어로 답변해주세요. 당신은 웹페이지에서 기업 정보를 추출하는 전문가입니다. 다음 형식의 JSON으로 응답해야 합니다:\n{\n\"company_name\": \"회사명\",\n\"customer_service_number\": \"전화번호\",\n\"business_address\": \"주소\",\n\"email\": \"이메일\"\n}\n모든 필드는 찾을 수 없으면 \"정보 없음\"으로 표시하세요."
             },
             {
                 "role": "user",
@@ -285,13 +301,36 @@ def check_product_brand_match(browser, brand_name):
         print("상품이 없습니다.")
         return False, []
     
-# 추출 정보를 MongoDB에 저장하는 함수 추가
+# 추출 정보를 MongoDB에 저장하는 함수 수정
 def save_contact_info_to_mongodb(brand_name, contact_info):
     try:
-        # 브랜드명으로 문서 찾아서 contact 필드에 정보 추가
+        # 영어 키로 데이터 변환
+        english_contact_info = {}
+        key_mapping = {
+            "브랜드명": "brand_name",
+            "상호명": "company_name",
+            "고객센터 번호": "customer_service_number",
+            "사업장소재지": "business_address",
+            "이메일주소": "email",
+            "공식 홈페이지 URL": "official_website_url",
+            "도메인유형": "domain_type",
+            "결과": "result"
+        }
+        
+        for k, v in contact_info.items():
+            # "정보 없음"을 빈 문자열로 변환
+            if v == "정보 없음":
+                v = ""
+                
+            if k in key_mapping:
+                english_contact_info[key_mapping[k]] = v
+            else:
+                english_contact_info[k] = v
+        
+        # 브랜드명으로 문서 찾아서 contact 필드를 객체로 설정 ($push 대신 $set 사용)
         result = collection.update_one(
             {"name": brand_name},
-            {"$push": {"contact": contact_info}}
+            {"$set": {"contact": english_contact_info}}
         )
         
         if result.modified_count > 0:
