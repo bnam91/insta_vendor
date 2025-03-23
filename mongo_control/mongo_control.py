@@ -62,6 +62,10 @@ class MongoControlGUI:
         self.delete_collection_btn = ttk.Button(self.selection_frame, text="콜렉션 삭제", command=self.delete_collection)
         self.delete_collection_btn.pack(side=tk.LEFT, padx=5)
         
+        # 콜렉션 이름 변경 버튼
+        self.rename_collection_btn = ttk.Button(self.selection_frame, text="이름 변경", command=self.rename_collection)
+        self.rename_collection_btn.pack(side=tk.LEFT, padx=5)
+        
         # 폴더 열기 버튼
         self.open_folder_btn = ttk.Button(self.selection_frame, text="폴더 열기", command=self.open_col_data_folder)
         self.open_folder_btn.pack(side=tk.LEFT, padx=5)
@@ -297,6 +301,79 @@ class MongoControlGUI:
         # 다이얼로그가 완료되면 컬렉션 목록 갱신
         if upload_dialog.result:
             self.update_collections(None)
+
+    def rename_collection(self):
+        selected_db = self.db_combo.get()
+        selected_collection = self.collection_combo.get()
+        
+        if not selected_db or not selected_collection:
+            messagebox.showwarning("경고", "데이터베이스와 컬렉션을 모두 선택해주세요.")
+            return
+            
+        # 새 컬렉션 이름 입력 받기
+        new_collection_name = simpledialog.askstring("컬렉션 이름 변경", 
+                                                    f"'{selected_collection}'의 새 이름을 입력하세요:",
+                                                    parent=self.root,
+                                                    initialvalue=selected_collection)
+        
+        # 입력 검증
+        if not new_collection_name:
+            return  # 사용자가 취소하거나 빈 이름을 입력한 경우
+        
+        if new_collection_name == selected_collection:
+            messagebox.showinfo("알림", "새 이름이 기존 이름과 동일합니다.")
+            return
+        
+        # 데이터베이스에 새 이름의 컬렉션이 이미 존재하는지 확인
+        db = self.client[selected_db]
+        if new_collection_name in db.list_collection_names():
+            messagebox.showerror("오류", f"'{new_collection_name}' 컬렉션이 이미 존재합니다.")
+            return
+            
+        try:
+            # MongoDB에서는 컬렉션 이름을 직접 변경하는 방법이 없으므로
+            # 새 컬렉션을 만들고 데이터를 복사한 다음 원본을 삭제함
+            
+            # 원본 컬렉션
+            source_collection = db[selected_collection]
+            # 새 컬렉션
+            target_collection = db[new_collection_name]
+            
+            # 모든 문서 가져오기
+            all_documents = list(source_collection.find({}))
+            
+            # 문서가 있는 경우 복사
+            if all_documents:
+                # _id 필드 유지하여 삽입 (원본 ID 유지)
+                target_collection.insert_many(all_documents)
+                
+                # 인덱스 복사
+                indexes = source_collection.index_information()
+                for index_name, index_info in indexes.items():
+                    if index_name != '_id_':  # 기본 _id 인덱스는 자동 생성되므로 제외
+                        target_collection.create_index(
+                            index_info['key'], 
+                            **{k: v for k, v in index_info.items() if k != 'key'}
+                        )
+            
+            # 원본 컬렉션 삭제
+            db.drop_collection(selected_collection)
+            
+            # 성공 메시지
+            messagebox.showinfo("이름 변경 완료", 
+                               f"컬렉션 이름이 '{selected_collection}'에서 '{new_collection_name}'으로 변경되었습니다.")
+            
+            # 컬렉션 목록 갱신
+            self.update_collections(None)
+            
+            # 새 컬렉션 선택
+            if new_collection_name in self.collection_combo['values']:
+                self.collection_combo.set(new_collection_name)
+            
+        except Exception as e:
+            error_msg = f"컬렉션 이름 변경 오류: {e}"
+            print(error_msg)
+            messagebox.showerror("오류", error_msg)
 
 class JSONUploadDialog:
     def __init__(self, parent, mongo_client, selected_db=None):
